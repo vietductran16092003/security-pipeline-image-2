@@ -33,7 +33,8 @@ def _get(url: str, token: str) -> bytes:
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     })
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    # URL luôn bắt đầu bằng hằng API (https://api.github.com), không lấy từ input người dùng.
+    with urllib.request.urlopen(req, timeout=60) as resp:  # nosemgrep
         return resp.read()
 
 

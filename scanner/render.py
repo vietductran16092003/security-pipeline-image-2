@@ -17,7 +17,8 @@ PRIORITY_COLORS = {"P1": "#dc2626", "P2": "#d97706", "Backlog": "#64748b"}
 VN_TZ = timezone(timedelta(hours=7))
 SUMMARY_LIMIT = 200
 
-_env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"), autoescape=True)
+# autoescape=True: mọi giá trị từ finding đều được escape (có test_html_escaped).
+_env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"), autoescape=True)  # nosemgrep
 
 
 def top_findings(report: Report, n: int = 5) -> list[Finding]:

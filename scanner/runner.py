@@ -122,6 +122,9 @@ def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, exec
         findings = parser(raw)
     except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
         return Section(section_id, "error", "Output JSON không hợp lệ")
+    for f in findings:  # đường dẫn trong container -> đường dẫn tương đối trong dự án
+        if f.file and f.file.startswith("/repo/"):
+            f.file = f.file[len("/repo/"):]
     return Section(section_id, "findings" if findings else "clean", findings=findings)
 
 

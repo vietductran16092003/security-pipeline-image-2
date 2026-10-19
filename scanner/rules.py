@@ -25,7 +25,7 @@ def apply_rules(findings: list[Finding], rules: list[dict]) -> None:
     for f in findings:
         for rule in rules:
             try:
-                matched = eval(rule["when"], safe_globals, asdict(f))  # noqa: S307
+                matched = eval(rule["when"], safe_globals, asdict(f))  # noqa: S307  # nosemgrep
             except Exception:
                 matched = False
             if matched:

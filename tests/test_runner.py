@@ -116,6 +116,13 @@ def test_clean_when_tool_reports_nothing(proj, out):
     assert section(run_scan(proj, out, SCANNER_DIR, fake), "secrets").status == "clean"
 
 
+def test_container_paths_made_relative(proj, out):
+    sg = '{"results": [{"check_id": "r", "path": "/repo/src/app.py", "start": {"line": 3}, "extra": {"message": "m", "severity": "ERROR"}}]}'
+    fake = FakeExecutor(out, overrides={"semgrep.json": sg})
+    f = section(run_scan(proj, out, SCANNER_DIR, fake), "code").findings[0]
+    assert f.file == "src/app.py"
+
+
 def test_commands_use_pinned_images_and_skip_scanner_dir(proj, out):
     cmds = [c for sid in SECTION_IDS for c in build_commands(sid, proj, out, SCANNER_DIR)]
     images = {a for c in cmds for a in c if a in TOOL_IMAGES.values()}
