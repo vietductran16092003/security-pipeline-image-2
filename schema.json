@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Security scan report",
+  "description": "Định dạng scan-out/report.json (artifact security-report). Finding cho phép thêm trường do AI agent chạy tay ghi vào (exploitable, assessed_by, ...).",
+  "type": "object",
+  "required": ["schema_version", "project", "branch", "commit", "run_id", "run_url", "scanned_at", "sections", "ignore_rules"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "project": {"type": "string"},
+    "branch": {"type": "string"},
+    "commit": {"type": "string"},
+    "run_id": {"type": "string"},
+    "run_url": {"type": "string"},
+    "scanned_at": {"type": "string"},
+    "ignore_rules": {"type": "integer", "minimum": 0},
+    "sections": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/section"},
+      "minItems": 6,
+      "maxItems": 6
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["id", "status", "detail", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"enum": ["secrets", "code", "deps", "image", "dockerfile_policy", "iac"]},
+        "status": {"enum": ["clean", "findings", "skipped", "error"]},
+        "detail": {"type": ["string", "null"]},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["tool", "kind", "rule_id", "severity", "title", "priority", "reason", "recommendation"],
+      "properties": {
+        "tool": {"enum": ["trivy", "semgrep", "gitleaks", "conftest"]},
+        "kind": {"enum": ["vuln", "secret", "code", "policy", "config"]},
+        "rule_id": {"type": "string"},
+        "severity": {"enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]},
+        "title": {"type": "string"},
+        "package": {"type": ["string", "null"]},
+        "installed_version": {"type": ["string", "null"]},
+        "fixed_version": {"type": ["string", "null"]},
+        "file": {"type": ["string", "null"]},
+        "line": {"type": ["integer", "null"]},
+        "base_os_eol": {"type": "boolean"},
+        "priority": {"enum": ["P1", "P2", "Backlog"]},
+        "reason": {"type": "string"},
+        "recommendation": {"type": "string"}
+      }
+    }
+  }
+}
