@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Báo cáo bảo mật {{ r.project }}</title>
+</head>
+<body style="margin:0;padding:0;background:#eef1f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f5;">
+<tr><td align="center" style="padding:24px 8px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+
+<!-- Đầu email tối -->
+<tr><td bgcolor="#0b1220" style="background:#0b1220;background-image:linear-gradient(135deg,#0b1220 0%,#1e1b4b 55%,#4c0519 100%);padding:24px 24px 0 24px;color:#ffffff;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="font-size:13px;font-weight:700;letter-spacing:1px;color:#ffffff;">SECURITY PIPELINE</td>
+      <td align="right" style="font-size:12px;color:#cbd5e1;font-family:Consolas,'SF Mono',monospace;">
+        <span style="border:1px solid #475569;border-radius:999px;padding:4px 10px;">{{ r.project }} · {{ r.branch }}</span>
+      </td>
+    </tr>
+  </table>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+    <tr>
+      <td width="96" valign="middle" style="width:96px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td align="center" valign="middle" width="96" height="96" bgcolor="{{ grade_color }}" style="width:96px;height:96px;background:{{ grade_color }};border-radius:20px;color:#ffffff;">
+            <div style="font-size:48px;font-weight:900;line-height:1;">{{ grade }}</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:2px;margin-top:4px;">ĐIỂM</div>
+          </td>
+        </tr></table>
+      </td>
+      <td valign="middle" style="padding-left:20px;">
+        <div style="font-size:26px;line-height:1.2;font-weight:800;color:#ffffff;">{% if headline_em %}<span style="color:#fca5a5;">{{ headline_em }}</span>{% endif %}{{ headline_rest }}</div>
+        <div style="margin-top:8px;font-size:14px;line-height:1.5;color:#cbd5e1;">{{ lead }}</div>
+      </td>
+    </tr>
+  </table>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;border-top:1px solid #334155;">
+    <tr>
+      {% for s in stats %}
+      <td align="center" width="25%" style="padding:16px 4px;{% if not loop.last %}border-right:1px solid #334155;{% endif %}">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;">{{ s.label }}</div>
+        <div style="font-size:28px;font-weight:800;color:{{ s.color }};">{{ s.value }}</div>
+        {% if s.delta %}<div style="font-size:12px;font-weight:600;color:{{ s.delta_color }};">{{ s.delta }}</div>{% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+  </table>
+</td></tr>
+
+<!-- Dải tỉ lệ -->
+{% if bar %}
+<tr><td style="padding:0;line-height:0;font-size:0;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+    {% for b in bar %}<td width="{{ b.pct }}%" height="10" bgcolor="{{ b.color }}" style="height:10px;background:{{ b.color }};"></td>{% endfor %}
+  </tr></table>
+</td></tr>
+{% endif %}
+
+<tr><td style="padding:24px;">
+
+  <!-- Khung cảnh báo -->
+  {% set a_bg = '#f0fdf4' if alert.good else '#fef2f2' %}
+  {% set a_bd = '#16a34a' if alert.good else '#dc2626' %}
+  {% set a_tx = '#14532d' if alert.good else '#7f1d1d' %}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{{ a_bg }};border-left:4px solid {{ a_bd }};border-radius:10px;">
+    <tr>
+      <td width="28" valign="top" style="padding:14px 0 14px 16px;">
+        <div style="width:28px;height:28px;line-height:28px;text-align:center;border-radius:8px;background:{{ a_bd }};color:#ffffff;font-weight:900;">{{ '✓' if alert.good else '!' }}</div>
+      </td>
+      <td style="padding:14px 16px 14px 12px;">
+        <div style="font-size:14px;font-weight:700;color:{{ a_tx }};">{{ alert.title }}</div>
+        <div style="font-size:13px;line-height:1.5;color:{{ a_tx }};">{% if alert.code %}<b style="font-family:Consolas,'SF Mono',monospace;">{{ alert.code }}</b>: {% endif %}{{ alert.text }}</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Lỗi mới / Đã sửa -->
+  {% if diff.first_scan %}
+  <div style="margin-top:16px;padding:12px 16px;background:#f1f5f9;border-radius:10px;font-size:13px;color:#334155;">Lần quét đầu tiên: chưa có dữ liệu để so sánh. Từ lần sau, email sẽ cho biết lỗi mới và lỗi đã sửa.</div>
+  {% else %}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;">
+    <tr>
+      <td width="50%" valign="top" style="padding-right:6px;">
+        <div style="background:#5b21b6;border-radius:12px;padding:16px;color:#ffffff;">
+          <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Lỗi mới</div>
+          <div style="font-size:32px;font-weight:900;">+{{ new_count }}</div>
+          <div style="font-size:12px;">{{ new_breakdown }}</div>
+        </div>
+      </td>
+      <td width="50%" valign="top" style="padding-left:6px;">
+        <div style="background:#047857;border-radius:12px;padding:16px;color:#ffffff;">
+          <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Đã sửa</div>
+          <div style="font-size:32px;font-weight:900;">−{{ fixed_count }}</div>
+          <div style="font-size:12px;">{{ fixed_text }}</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+  {% if not_compared %}<div style="margin-top:8px;font-size:12px;color:#64748b;">Không so sánh được: {{ not_compared }} (lần này hoặc lần trước phần này bị lỗi/không quét).</div>{% endif %}
+  {% endif %}
+
+  <!-- Cần xử lý trước -->
+  {% if top %}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+    <tr>
+      <td style="font-size:15px;font-weight:700;padding-bottom:8px;">Cần xử lý trước</td>
+      <td align="right" style="font-size:12px;color:#64748b;padding-bottom:8px;">{{ top|length }} / {{ total }}</td>
+    </tr>
+    {% for t in top %}
+    <tr><td colspan="2" style="border-top:1px solid #eef1f5;padding:12px 0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td width="48" valign="middle">
+          <div style="width:40px;height:40px;line-height:40px;text-align:center;border-radius:10px;background:{{ t.color }};color:#ffffff;font-size:12px;font-weight:900;">{{ t.priority }}</div>
+        </td>
+        <td valign="middle" style="padding-left:8px;">
+          <div style="font-size:14px;font-weight:700;font-family:Consolas,'SF Mono',monospace;word-break:break-all;">{{ t.rule_id }}{% if t.is_new %} <span style="font-family:Arial,sans-serif;background:#ede9fe;color:#5b21b6;font-size:10px;font-weight:800;padding:2px 6px;border-radius:6px;">MỚI</span>{% endif %}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px;word-break:break-all;">{{ t.meta }}</div>
+        </td>
+        {% if t.is_vuln %}
+        <td align="right" valign="middle" style="font-size:12px;color:#64748b;white-space:nowrap;padding-left:8px;">
+          {% if t.has_fix %}nâng lên<br><b style="color:#047857;font-family:Consolas,'SF Mono',monospace;">{{ t.fix }}</b>{% else %}{{ t.fix }}{% endif %}
+        </td>
+        {% endif %}
+      </tr></table>
+    </td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <!-- Nút -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+    <tr><td align="center" bgcolor="{{ '#0f172a' if alert.good else '#dc2626' }}" style="border-radius:12px;background:{{ '#0f172a' if alert.good else '#dc2626' }};">
+      <a href="{{ r.run_url }}" style="display:block;padding:16px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;">Xem đủ {{ total }} lỗi trên GitHub →</a>
+    </td></tr>
+  </table>
+
+  <!-- Các phần quét -->
+  <div style="margin-top:24px;font-size:15px;font-weight:700;">Các phần đã quét</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+    {% for s in sections %}
+    <tr>
+      <td width="20" valign="top" style="padding:8px 0;font-weight:900;color:{{ s.color }};">{{ s.icon }}</td>
+      <td valign="top" style="padding:8px 0;font-size:13px;border-bottom:1px solid #eef1f5;">
+        <b>{{ s.label }}</b>: <span style="color:{{ s.color }};font-weight:700;">{{ s.text }}</span>
+        {% if s.detail %}<div style="font-size:12px;color:#64748b;">{{ s.detail }}</div>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if r.ignore_rules %}<div style="margin-top:8px;font-size:12px;color:#64748b;">Đang áp dụng {{ r.ignore_rules }} quy tắc bỏ qua từ file ignore của dự án.</div>{% endif %}
+
+</td></tr>
+
+<!-- Footer -->
+<tr><td style="background:#f8fafc;border-top:1px solid #eef1f5;padding:16px 24px;font-size:12px;color:#64748b;text-align:center;">
+  Gửi tự động sau mỗi lần quét · run #{{ r.run_id }} · <a href="{{ r.run_url }}" style="color:#475569;">xem log</a>
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>
