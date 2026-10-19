@@ -18,7 +18,7 @@ class FakeExecutor:
         self.overrides = overrides or {}
         self.calls = []
 
-    def __call__(self, cmd, stdout_path=None):
+    def __call__(self, cmd, stdout_path=None, timeout=None):
         self.calls.append(cmd)
         joined = " ".join(cmd)
         for needle, code in self.exit_codes.items():
@@ -151,6 +151,42 @@ def test_git_safe_directory_for_git_tools(proj, out):
     for sid in ("secrets", "code"):
         cmd = " ".join(build_commands(sid, proj, out, SCANNER_DIR)[0])
         assert "GIT_CONFIG_KEY_0=safe.directory" in cmd and "GIT_CONFIG_VALUE_0=/repo" in cmd
+
+
+class Clock:
+    def __init__(self, step):
+        self.t, self.step = 0.0, step
+
+    def __call__(self):
+        self.t += self.step
+        return self.t
+
+
+def test_deadline_marks_remaining_sections_error(proj, out):
+    fake = FakeExecutor(out)
+    secs = run_scan(full_project(proj), out, SCANNER_DIR, fake, deadline=100, clock=Clock(40))
+    statuses = {s.id: s.status for s in secs}
+    assert statuses["secrets"] == "findings"
+    late = [s for s in secs if s.status == "error"]
+    assert late and all("Hết thời gian" in s.detail for s in late)
+    assert len(secs) == 6
+
+
+def test_executor_gets_remaining_time(proj, out):
+    seen = []
+
+    def ex(cmd, stdout_path=None, timeout=None):
+        seen.append(timeout)
+        return FakeExecutor(out)(cmd, stdout_path)
+    run_scan(proj, out, SCANNER_DIR, ex, deadline=500, clock=Clock(1))
+    assert seen and all(t is not None and t <= 500 for t in seen)
+
+
+def test_docker_run_commands_are_named(proj, out):
+    for sid in SECTION_IDS:
+        for c in build_commands(sid, full_project(proj), out, SCANNER_DIR):
+            if c[:2] == ["docker", "run"]:
+                assert "--name" in c
 
 
 def test_count_ignore_rules(tmp_path):

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -12,8 +14,8 @@ from .detect import SKIP_DIRS, detect_project, plan_sections
 from .models import SECTION_IDS, Section
 from .parsers import parse_conftest, parse_gitleaks, parse_semgrep, parse_trivy
 
-# (lệnh, file ghi stdout hoặc None) -> exit code
-Executor = Callable[[list[str], Optional[Path]], int]
+# (lệnh, file ghi stdout hoặc None, timeout giây) -> exit code
+Executor = Callable[[list[str], Optional[Path], Optional[float]], int]
 
 TOOL_IMAGES: dict[str, str] = {
     "gitleaks": "zricethezav/gitleaks:v8.21.2",
@@ -24,6 +26,8 @@ TOOL_IMAGES: dict[str, str] = {
 TRIVY_CACHE_VOLUME = "scanner-trivy-cache:/root/.cache"
 TARGET_IMAGE = "scan-target:local"
 TOOL_TIMEOUT = 600
+# Tổng thời gian cho mọi công cụ, nhỏ hơn timeout 20 phút của job để còn kịp ghi báo cáo và gửi mail.
+SCAN_DEADLINE = 900
 EXCLUDED_DIRS = (".scanner", "scan-out")
 
 # phần quét -> (file output, parser, các exit code chấp nhận)
@@ -37,15 +41,18 @@ OUTPUTS = {
 }
 
 
-def default_executor(cmd: list[str], stdout_path: Optional[Path] = None) -> int:
+def default_executor(cmd: list[str], stdout_path: Optional[Path] = None,
+                     timeout: Optional[float] = TOOL_TIMEOUT) -> int:
     print("$ " + " ".join(cmd), flush=True)
     try:
         if stdout_path is not None:
             with open(stdout_path, "w", encoding="utf-8") as fh:
-                return subprocess.run(cmd, stdout=fh, timeout=TOOL_TIMEOUT).returncode
-        return subprocess.run(cmd, timeout=TOOL_TIMEOUT).returncode
+                return subprocess.run(cmd, stdout=fh, timeout=timeout).returncode
+        return subprocess.run(cmd, timeout=timeout).returncode
     except subprocess.TimeoutExpired:
-        print(f"Hết thời gian chờ ({TOOL_TIMEOUT}s)", flush=True)
+        print(f"Hết thời gian chờ ({timeout:.0f}s)", flush=True)
+        if "--name" in cmd:  # timeout chỉ giết docker client, phải dừng cả container
+            subprocess.run(["docker", "kill", cmd[cmd.index("--name") + 1]], capture_output=True)
         return 124
     except FileNotFoundError as exc:
         print(f"Không tìm thấy lệnh: {exc}", flush=True)
@@ -53,7 +60,7 @@ def default_executor(cmd: list[str], stdout_path: Optional[Path] = None) -> int:
 
 
 def _docker(image: str, mounts: list[str], extra: Optional[list[str]] = None) -> list[str]:
-    cmd = ["docker", "run", "--rm"]
+    cmd = ["docker", "run", "--rm", "--name", f"scanner-{uuid.uuid4().hex[:12]}"]
     for m in mounts:
         cmd += ["-v", m]
     return cmd + (extra or []) + [image]
@@ -114,14 +121,25 @@ def _tool_name(cmd: list[str]) -> str:
     return cmd[0]
 
 
-def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, executor: Executor) -> Section:
+def _timeout_section(section_id: str, deadline: float) -> Section:
+    return Section(section_id, "error", f"Hết thời gian quét (giới hạn {deadline / 60:.0f} phút cho toàn bộ công cụ)")
+
+
+def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, executor: Executor,
+                 remaining: Callable[[], float], deadline: float) -> Section:
     filename, parser, accepted = OUTPUTS[section_id]
     target = out / filename
     if target.exists():
         target.unlink()
     for cmd in build_commands(section_id, root, out, scanner_dir):
         stdout_path = target if section_id == "dockerfile_policy" else None
-        code = executor(cmd, stdout_path)
+        left = remaining()
+        if left <= 0:
+            return _timeout_section(section_id, deadline)
+        code = executor(cmd, stdout_path, min(TOOL_TIMEOUT, left))
+        if code == 124:
+            return _timeout_section(section_id, deadline) if remaining() <= 0 else \
+                Section(section_id, "error", f"{_tool_name(cmd)} chạy quá {TOOL_TIMEOUT // 60} phút")
         ok = (0,) if cmd[:2] == ["docker", "build"] else accepted
         if code not in ok:
             return Section(section_id, "error", f"{_tool_name(cmd)} thất bại (exit {code})")
@@ -138,16 +156,22 @@ def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, exec
     return Section(section_id, "findings" if findings else "clean", findings=findings)
 
 
-def run_scan(root: Path, out: Path, scanner_dir: Path, executor: Executor = default_executor) -> list[Section]:
+def run_scan(root: Path, out: Path, scanner_dir: Path, executor: Executor = default_executor,
+             deadline: float = SCAN_DEADLINE, clock: Callable[[], float] = time.monotonic) -> list[Section]:
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     plan = plan_sections(detect_project(root))
+    start = clock()
+
+    def remaining() -> float:
+        return deadline - (clock() - start)
+
     sections = []
     for sid in SECTION_IDS:
         if plan[sid] is not None:
             sections.append(Section(sid, "skipped", plan[sid]))
         else:
-            sections.append(_run_section(sid, root, out, Path(scanner_dir), executor))
+            sections.append(_run_section(sid, root, out, Path(scanner_dir), executor, remaining, deadline))
     return sections
 
 
