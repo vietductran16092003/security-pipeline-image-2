@@ -55,7 +55,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PYTHONPATH: .scanner
-        run: python -m scanner run --root . --out scan-out --scanner-dir .scanner
+        run: python -P -m scanner run --root . --out scan-out --scanner-dir .scanner
 
       - name: Ghi Job Summary
         if: always()
@@ -71,6 +71,7 @@ jobs:
             scan-out/report.json
             scan-out/email.html
           retention-days: 90
+          overwrite: true
           if-no-files-found: warn
 
       - name: Gửi email
@@ -81,4 +82,4 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           REPORT_EMAIL_TO: ${{ secrets.REPORT_EMAIL_TO }}
         run: |
-          if [ -f scan-out/email.html ]; then python -m scanner send --out scan-out; fi
+          if [ -f scan-out/email.html ]; then python -P -m scanner send --out scan-out; fi
