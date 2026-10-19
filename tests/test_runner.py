@@ -134,6 +134,25 @@ def test_commands_use_pinned_images_and_skip_scanner_dir(proj, out):
     assert "--redact" in gitleaks
 
 
+def test_trivyignore_passed_to_every_trivy_scan(proj, out):
+    (proj / ".trivyignore").write_text("CVE-1\n")
+    for sid in ("deps", "image", "iac"):
+        trivy = next(c for c in build_commands(sid, proj, out, SCANNER_DIR) if TOOL_IMAGES["trivy"] in c)
+        assert "--ignorefile" in trivy and trivy[trivy.index("--ignorefile") + 1] == "/repo/.trivyignore"
+        assert any(m.endswith(":/repo:ro") or m.endswith(":/repo") for m in trivy)
+
+
+def test_no_ignorefile_flag_without_file(proj, out):
+    trivy = build_commands("deps", proj, out, SCANNER_DIR)[0]
+    assert "--ignorefile" not in trivy
+
+
+def test_git_safe_directory_for_git_tools(proj, out):
+    for sid in ("secrets", "code"):
+        cmd = " ".join(build_commands(sid, proj, out, SCANNER_DIR)[0])
+        assert "GIT_CONFIG_KEY_0=safe.directory" in cmd and "GIT_CONFIG_VALUE_0=/repo" in cmd
+
+
 def test_count_ignore_rules(tmp_path):
     (tmp_path / ".trivyignore").write_text("# c\nCVE-1\n\nCVE-2\n")
     (tmp_path / ".gitleaksignore").write_text("abc:a.env:aws:1\n")

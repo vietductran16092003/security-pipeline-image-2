@@ -63,27 +63,37 @@ def _trivy_skip() -> list[str]:
     return ["--skip-dirs", ",".join(f"/repo/{d}" for d in EXCLUDED_DIRS)]
 
 
+# Repo trên runner thuộc user khác với user trong container: báo git tin tưởng /repo.
+GIT_SAFE_DIR = ["-e", "GIT_CONFIG_COUNT=1", "-e", "GIT_CONFIG_KEY_0=safe.directory", "-e", "GIT_CONFIG_VALUE_0=/repo"]
+
+
+def _trivy_ignore(root: Path) -> list[str]:
+    return ["--ignorefile", "/repo/.trivyignore"] if (root / ".trivyignore").is_file() else []
+
+
 def build_commands(section_id: str, root: Path, out: Path, scanner_dir: Path) -> list[list[str]]:
     root, out, scanner_dir = Path(root).resolve(), Path(out).resolve(), Path(scanner_dir).resolve()
     repo, outm = f"{root}:/repo", f"{out}:/out"
     if section_id == "secrets":
-        return [_docker(TOOL_IMAGES["gitleaks"], [repo, outm]) + [
+        return [_docker(TOOL_IMAGES["gitleaks"], [repo, outm], GIT_SAFE_DIR) + [
             "detect", "--source", "/repo", "--redact", "--report-format", "json",
             "--report-path", "/out/gitleaks.json", "--exit-code", "0"]]
     if section_id == "code":
         excludes = [a for d in EXCLUDED_DIRS for a in ("--exclude", d)]
-        return [_docker(TOOL_IMAGES["semgrep"], [repo, outm], ["-w", "/repo"]) + [
+        return [_docker(TOOL_IMAGES["semgrep"], [repo, outm], ["-w", "/repo", *GIT_SAFE_DIR]) + [
             "semgrep", "scan", "--config", "p/default", "--json", "--output", "/out/semgrep.json",
             "--metrics=off", *excludes, "/repo"]]
     if section_id == "deps":
         return [_docker(TOOL_IMAGES["trivy"], [repo, outm, TRIVY_CACHE_VOLUME]) + [
-            "fs", "--scanners", "vuln", *_trivy_skip(), "--format", "json",
+            "fs", "--scanners", "vuln", *_trivy_skip(), *_trivy_ignore(root), "--format", "json",
             "--output", "/out/trivy-fs.json", "/repo"]]
     if section_id == "image":
         return [
             ["docker", "build", "-t", TARGET_IMAGE, str(root)],
-            _docker(TOOL_IMAGES["trivy"], ["/var/run/docker.sock:/var/run/docker.sock", outm, TRIVY_CACHE_VOLUME]) + [
-                "image", "--scanners", "vuln", "--format", "json", "--output", "/out/trivy-image.json", TARGET_IMAGE],
+            _docker(TOOL_IMAGES["trivy"], ["/var/run/docker.sock:/var/run/docker.sock", f"{root}:/repo:ro",
+                                           outm, TRIVY_CACHE_VOLUME]) + [
+                "image", "--scanners", "vuln", *_trivy_ignore(root), "--format", "json",
+                "--output", "/out/trivy-image.json", TARGET_IMAGE],
         ]
     if section_id == "dockerfile_policy":
         return [_docker(TOOL_IMAGES["conftest"], [repo, f"{scanner_dir / 'policy'}:/policy"]) + [
@@ -91,7 +101,7 @@ def build_commands(section_id: str, root: Path, out: Path, scanner_dir: Path) ->
             "--all-namespaces", "--output", "json"]]
     if section_id == "iac":
         return [_docker(TOOL_IMAGES["trivy"], [repo, outm, TRIVY_CACHE_VOLUME]) + [
-            "config", *_trivy_skip(), "--format", "json", "--output", "/out/trivy-config.json", "/repo"]]
+            "config", *_trivy_skip(), *_trivy_ignore(root), "--format", "json", "--output", "/out/trivy-config.json", "/repo"]]
     raise ValueError(f"Phần quét không tồn tại: {section_id}")
 
 
