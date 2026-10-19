@@ -1,0 +1,26 @@
+name: Self scan
+
+# Bộ quét tự quét chính nó, theo đúng cách một dự án bên ngoài gọi.
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  scan:
+    needs: test
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/scan.yml
+    with:
+      scanner-ref: ${{ github.sha }}
+    secrets: inherit

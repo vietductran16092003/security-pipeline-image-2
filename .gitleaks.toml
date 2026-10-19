@@ -1,0 +1,8 @@
+# Dùng bộ rule mặc định của Gitleaks, chỉ bỏ qua fixture test
+# (tests/fixtures/gitleaks.json chứa một AWS key giả để kiểm tra parser).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixture test chứa secret giả"
+paths = ['''tests/fixtures/''']

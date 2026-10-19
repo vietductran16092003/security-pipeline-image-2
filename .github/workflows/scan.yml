@@ -1,0 +1,81 @@
+name: Security scan
+
+# Reusable workflow. Dự án khác gọi bằng:
+#   jobs:
+#     scan:
+#       uses: vietductran16092003/security-scan-action/.github/workflows/scan.yml@v1
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      scanner-ref:
+        description: "Phiên bản bộ quét (tag, nhánh hoặc SHA) cần dùng"
+        type: string
+        default: "v1"
+    secrets:
+      SMTP_USERNAME:
+        required: false
+      SMTP_PASSWORD:
+        required: false
+      REPORT_EMAIL_TO:
+        required: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout dự án
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Checkout bộ quét
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: vietductran16092003/security-scan-action
+          ref: ${{ inputs.scanner-ref }}
+          path: .scanner
+
+      - name: Cài Python
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Cài thư viện bộ quét
+        run: pip install -r .scanner/requirements.txt
+
+      - name: Quét
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: .scanner
+        run: python -m scanner run --root . --out scan-out --scanner-dir .scanner
+
+      - name: Ghi Job Summary
+        if: always()
+        run: |
+          if [ -f scan-out/summary.md ]; then cat scan-out/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Lưu báo cáo
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: security-report
+          path: |
+            scan-out/report.json
+            scan-out/email.html
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Gửi email
+        if: always()
+        env:
+          PYTHONPATH: .scanner
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          REPORT_EMAIL_TO: ${{ secrets.REPORT_EMAIL_TO }}
+        run: |
+          if [ -f scan-out/email.html ]; then python -m scanner send --out scan-out; fi
