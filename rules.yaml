@@ -1,0 +1,52 @@
+# Rule chạy theo đúng thứ tự khai báo: rule khớp đầu tiên được áp dụng.
+# Biến dùng được trong `when`: mọi trường của Finding (tool, kind, rule_id, severity,
+# package, installed_version, fixed_version, file, line, base_os_eol...).
+# Rule cuối luôn khớp, nên finding nào cũng có priority.
+
+- name: secret_leak
+  when: "kind == 'secret'"
+  priority: "P1"
+  reason: "Secret bị lộ trong mã nguồn hoặc lịch sử git"
+  recommendation: "Thu hồi (rotate) secret ngay, xoá khỏi mã nguồn, chuyển sang biến môi trường hoặc secret manager"
+
+- name: critical
+  when: "severity == 'CRITICAL'"
+  priority: "P1"
+  reason: "Mức độ nghiêm trọng CRITICAL"
+  recommendation: "Cập nhật lên phiên bản đã vá hoặc gỡ thành phần này ngay"
+
+- name: eol_medium_backlog
+  when: "base_os_eol and severity == 'MEDIUM'"
+  priority: "Backlog"
+  reason: "Base OS đã hết hỗ trợ (EOL), không phải lỗi mới phát sinh"
+  recommendation: "Ưu tiên đổi sang base image còn được hỗ trợ thay vì vá từng CVE lẻ"
+
+- name: high_fixable
+  when: "severity == 'HIGH' and kind in ('vuln', 'config', 'code') and (kind != 'vuln' or fixed_version)"
+  priority: "P1"
+  reason: "Mức độ HIGH và đã có cách khắc phục"
+  recommendation: "Nâng lên phiên bản đã vá hoặc sửa cấu hình/mã theo gợi ý của công cụ"
+
+- name: high_nofix
+  when: "severity == 'HIGH' and kind == 'vuln'"
+  priority: "P2"
+  reason: "Mức độ HIGH nhưng chưa có bản vá"
+  recommendation: "Theo dõi bản vá; cân nhắc thay thư viện hoặc giảm bề mặt tấn công"
+
+- name: policy_deny
+  when: "kind == 'policy' and rule_id.startswith('deny:')"
+  priority: "P2"
+  reason: "Dockerfile vi phạm policy bắt buộc"
+  recommendation: "Sửa Dockerfile theo thông báo của policy"
+
+- name: medium
+  when: "severity == 'MEDIUM'"
+  priority: "P2"
+  reason: "Mức độ MEDIUM"
+  recommendation: "Lên kế hoạch xử lý trong đợt cập nhật tới"
+
+- name: default_backlog
+  when: "True"
+  priority: "Backlog"
+  reason: "Mức độ thấp hoặc chỉ là khuyến nghị"
+  recommendation: "Xử lý khi có thời gian"
