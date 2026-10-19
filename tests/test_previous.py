@@ -36,6 +36,13 @@ class FakeResp(io.BytesIO):
         return False
 
 
+def patch_open(monkeypatch, fn):
+    class Opener:
+        def open(self, req, timeout=None):
+            return fn(req, timeout)
+    monkeypatch.setattr(previous, "_opener", lambda: Opener())
+
+
 def _zip(text):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
@@ -54,29 +61,51 @@ def _fake_urlopen(zip_bytes):
 
 def test_fetch_ok(monkeypatch):
     rep = make_report([vuln("A")])
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen(_zip(rep.to_json())))
+    patch_open(monkeypatch, _fake_urlopen(_zip(rep.to_json())))
     assert fetch_previous_report("o/r", "main", "1", "t") == rep
 
 
 def test_fetch_returns_none_on_http_error(monkeypatch):
     def boom(req, timeout=None):
         raise urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
-    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    patch_open(monkeypatch, boom)
     assert fetch_previous_report("o/r", "main", "1", "t") is None
 
 
 def test_fetch_returns_none_on_old_schema(monkeypatch):
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen(_zip('{"schema_version": 0}')))
+    patch_open(monkeypatch, _fake_urlopen(_zip('{"schema_version": 0}')))
     assert fetch_previous_report("o/r", "main", "1", "t") is None
 
 
 def test_fetch_returns_none_on_bad_zip(monkeypatch):
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen(b"not a zip"))
+    patch_open(monkeypatch, _fake_urlopen(b"not a zip"))
     assert fetch_previous_report("o/r", "main", "1", "t") is None
+
+
+def test_zip_redirect_drops_auth_header(monkeypatch):
+    """GitHub trả 302 sang blob storage; token không được gửi tới host khác."""
+    seen = []
+
+    class FakeOpener:
+        def open(self, req, timeout=None):
+            seen.append(req)
+            if "/zip" in req.full_url:
+                raise urllib.error.HTTPError(req.full_url, 302, "Found",
+                                             {"Location": "https://blob.example.net/a.zip?sig=x"}, None)
+            if "blob.example.net" in req.full_url:
+                return FakeResp(_zip(make_report([vuln("A")]).to_json()))
+            return FakeResp(json.dumps({"artifacts": [a(7, "main", "2026-10-10")]}).encode())
+
+    monkeypatch.setattr(previous, "_opener", lambda: FakeOpener())
+    assert fetch_previous_report("o/r", "main", "1", "secret-token") is not None
+    blob = [r for r in seen if "blob.example.net" in r.full_url]
+    assert blob and blob[0].get_header("Authorization") is None
+    api = [r for r in seen if "api.github.com" in r.full_url]
+    assert all(r.get_header("Authorization") == "Bearer secret-token" for r in api)
 
 
 def test_fetch_without_token_skips_network(monkeypatch):
     def boom(*a, **k):
         raise AssertionError("không được gọi mạng")
-    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    patch_open(monkeypatch, boom)
     assert previous.fetch_previous_report("o/r", "main", "1", "") is None

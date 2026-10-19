@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import urllib.error
 import urllib.request
 import zipfile
 from typing import Optional
@@ -27,14 +28,32 @@ def select_previous_artifact(artifacts: list[dict], branch: str, current_run_id:
     return max(candidates, key=lambda a: a.get("created_at") or "")["id"]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # tự xử lý redirect để không gửi token sang host khác
+
+
+def _opener():
+    return urllib.request.build_opener(_NoRedirect)
+
+
 def _get(url: str, token: str) -> bytes:
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     })
-    # URL luôn bắt đầu bằng hằng API (https://api.github.com), không lấy từ input người dùng.
-    with urllib.request.urlopen(req, timeout=60) as resp:  # nosemgrep
+    opener = _opener()
+    try:
+        # URL luôn bắt đầu bằng hằng API (https://api.github.com), không lấy từ input người dùng.
+        with opener.open(req, timeout=60) as resp:  # nosemgrep
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        location = exc.headers.get("Location") if exc.headers else None
+        if exc.code not in (301, 302, 303, 307, 308) or not location:
+            raise
+    # File zip của artifact nằm ở blob storage với URL đã ký sẵn: tải không kèm token.
+    with opener.open(urllib.request.Request(location), timeout=120) as resp:  # nosemgrep
         return resp.read()
 
 
