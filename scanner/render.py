@@ -28,12 +28,21 @@ def top_findings(report: Report, n: int = 5) -> list[Finding]:
     )[:n]
 
 
+def errored_sections(report: Report) -> list[str]:
+    return [s.id for s in report.sections if s.status == "error"]
+
+
 def render_subject(report: Report, diff: Diff) -> str:
     p1 = report.counts()["P1"]
     head = f"[{report.project}] {p1} lỗi P1" if p1 else f"[{report.project}] Không có lỗi P1"
     if diff.first_scan:
-        return f"{head} · Lần quét đầu tiên"
-    return f"{head} · +{len(diff.new)} mới, {len(diff.fixed)} đã sửa"
+        subject = f"{head} · Lần quét đầu tiên"
+    else:
+        subject = f"{head} · +{len(diff.new)} mới, {len(diff.fixed)} đã sửa"
+    errors = errored_sections(report)
+    if errors:
+        subject += f" · {len(errors)} phần quét lỗi"
+    return subject
 
 
 def _location(f: Finding) -> str:
@@ -108,6 +117,10 @@ def _context(report: Report, diff: Diff) -> dict:
     elif diff.first_scan and p1:
         f = top_findings(report, 1)[0]
         alert = dict(good=False, title="Lỗi nghiêm trọng nhất", code=f.rule_id, text=_alert_text(f))
+    elif errored_sections(report):
+        names = ", ".join(SECTION_LABELS[s] for s in errored_sections(report))
+        alert = dict(good=False, warn=True, title="Không quét được một số phần", code="",
+                     text=f"Không quét được: {names}. Kết quả chưa đầy đủ, xem chi tiết ở cuối email.")
     elif diff.first_scan:
         alert = dict(good=True, title="Không có lỗi P1", code="", text="Chưa phát hiện lỗi cần xử lý ngay.")
     else:
@@ -140,9 +153,12 @@ def _context(report: Report, diff: Diff) -> dict:
     lead = f"Commit {report.commit[:7]} · quét lúc {_when(report.scanned_at)}."
     if not diff.first_scan and new_p1:
         lead = f"Có {new_p1} lỗi P1 mới. " + lead
+    errors = errored_sections(report)
+    if errors:
+        lead = f"Không quét được {len(errors)} phần, điểm chỉ là tạm tính. " + lead
 
     return dict(
-        r=report, grade=grade, grade_color=GRADE_COLORS[grade], stats=stats, bar=bar, alert=alert,
+        r=report, grade=grade, grade_color=GRADE_COLORS[grade], provisional=bool(errors), stats=stats, bar=bar, alert=alert,
         diff=diff, new_count=len(diff.new), fixed_count=len(diff.fixed),
         new_breakdown=" · ".join(f"{n} {p}" for p, n in new_p.items() if n) or "Không có",
         fixed_text=fixed_text or "Không có", top=top, total=total,
@@ -172,8 +188,9 @@ def _md(text) -> str:
 def render_summary(report: Report, diff: Diff) -> str:
     c = report.counts()
     grade = compute_grade(report)
+    grade_label = f"Điểm tạm {grade}" if errored_sections(report) else f"Điểm {grade}"
     lines = [f"## Báo cáo bảo mật: {report.project}", "",
-             f"**Điểm {grade}** · nhánh `{report.branch}` · commit `{report.commit[:7]}` · {_when(report.scanned_at)}", ""]
+             f"**{grade_label}** · nhánh `{report.branch}` · commit `{report.commit[:7]}` · {_when(report.scanned_at)}", ""]
     if diff.first_scan:
         lines.append("Lần quét đầu tiên, chưa có dữ liệu để so sánh.")
     else:

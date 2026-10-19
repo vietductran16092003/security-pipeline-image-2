@@ -114,6 +114,28 @@ def test_email_inline_only():
         assert banned not in html
 
 
+def test_subject_mentions_errored_sections():
+    r = rep_sections(secrets=("error", "gitleaks thất bại (exit 1)"), code=("error", "x"))
+    assert render_subject(r, first()) == "[my-api] Không có lỗi P1 · Lần quét đầu tiên · 2 phần quét lỗi"
+
+
+def test_errors_never_look_clean():
+    html = render_email(rep_sections(secrets=("error", "gitleaks thất bại (exit 1)")), first())
+    assert "Không quét được" in html and "Secret (Gitleaks)" in html
+    assert "ĐIỂM TẠM" in html
+    assert "Chưa phát hiện lỗi cần xử lý ngay" not in html
+
+
+def test_no_error_keeps_normal_grade_label():
+    html = render_email(rep_p1(0), first())
+    assert "ĐIỂM TẠM" not in html and "Không quét được" not in html
+
+
+def test_summary_mentions_errors():
+    md = render_summary(rep_sections(deps=("error", "trivy thất bại (exit 1)")), first())
+    assert "Điểm tạm" in md
+
+
 def test_summary_truncates():
     md = render_summary(rep_many(500), first())
     assert "300 finding khác" in md and md.count("| CVE-2024-") == 200

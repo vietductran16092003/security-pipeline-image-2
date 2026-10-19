@@ -26,7 +26,7 @@
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
           <td align="center" valign="middle" width="96" height="96" bgcolor="{{ grade_color }}" style="width:96px;height:96px;background:{{ grade_color }};border-radius:20px;color:#ffffff;">
             <div style="font-size:48px;font-weight:900;line-height:1;">{{ grade }}</div>
-            <div style="font-size:10px;font-weight:700;letter-spacing:2px;margin-top:4px;">ĐIỂM</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:2px;margin-top:4px;">{{ 'ĐIỂM TẠM' if provisional else 'ĐIỂM' }}</div>
           </td>
         </tr></table>
       </td>
@@ -61,9 +61,13 @@
 <tr><td style="padding:24px;">
 
   <!-- Khung cảnh báo -->
-  {% set a_bg = '#f0fdf4' if alert.good else '#fef2f2' %}
-  {% set a_bd = '#16a34a' if alert.good else '#dc2626' %}
-  {% set a_tx = '#14532d' if alert.good else '#7f1d1d' %}
+  {% if alert.warn %}
+  {% set a_bg, a_bd, a_tx = '#fffbeb', '#d97706', '#78350f' %}
+  {% elif alert.good %}
+  {% set a_bg, a_bd, a_tx = '#f0fdf4', '#16a34a', '#14532d' %}
+  {% else %}
+  {% set a_bg, a_bd, a_tx = '#fef2f2', '#dc2626', '#7f1d1d' %}
+  {% endif %}
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{{ a_bg }};border-left:4px solid {{ a_bd }};border-radius:10px;">
     <tr>
       <td width="28" valign="top" style="padding:14px 0 14px 16px;">
