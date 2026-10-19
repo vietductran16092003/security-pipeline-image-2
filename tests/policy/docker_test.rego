@@ -18,6 +18,39 @@ df_latest := [
 	{"Cmd": "user", "Value": ["app"]},
 ]
 
+df_no_user := [{"Cmd": "from", "Value": ["node:20.11-alpine"]}]
+
+df_root_group := [
+	{"Cmd": "from", "Value": ["node:20.11-alpine"]},
+	{"Cmd": "user", "Value": ["root:root"]},
+]
+
+df_uid0 := [
+	{"Cmd": "from", "Value": ["node:20.11-alpine"]},
+	{"Cmd": "user", "Value": ["0:0"]},
+]
+
+df_uid1000 := [
+	{"Cmd": "from", "Value": ["node:20.11-alpine"]},
+	{"Cmd": "user", "Value": ["1000:1000"]},
+]
+
+test_no_user_denied if {
+	count(deny) > 0 with input as df_no_user
+}
+
+test_root_with_group_denied if {
+	count(deny) > 0 with input as df_root_group
+}
+
+test_uid0_with_group_denied if {
+	count(deny) > 0 with input as df_uid0
+}
+
+test_uid1000_not_denied if {
+	count(deny) == 0 with input as df_uid1000
+}
+
 test_root_user_denied if {
 	count(deny) > 0 with input as df_root
 }
