@@ -1,0 +1,113 @@
+{
+  "results": [
+    {
+      "check_id": "dockerfile.security.last-user-is-root.last-user-is-root",
+      "path": "Dockerfile",
+      "start": {
+        "line": 3,
+        "col": 1,
+        "offset": 40
+      },
+      "end": {
+        "line": 3,
+        "col": 10,
+        "offset": 49
+      },
+      "extra": {
+        "message": "The last user in the container is 'root'. This is a security hazard because if an attacker gains control of the container they will have root access. Switch back to another user after running commands",
+        "severity": "ERROR"
+      }
+    },
+    {
+      "check_id": "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true",
+      "path": "app.py",
+      "start": {
+        "line": 3,
+        "col": 39,
+        "offset": 76
+      },
+      "end": {
+        "line": 3,
+        "col": 43,
+        "offset": 80
+      },
+      "extra": {
+        "message": "Found 'subprocess' function 'call' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process. Doing so propagates current shell settings and variables, which ",
+        "severity": "ERROR"
+      }
+    },
+    {
+      "check_id": "generic.secrets.security.detected-aws-access-key-id-value.detected-aws-access-key-id-value",
+      "path": "config.env",
+      "start": {
+        "line": 1,
+        "col": 19,
+        "offset": 18
+      },
+      "end": {
+        "line": 1,
+        "col": 39,
+        "offset": 38
+      },
+      "extra": {
+        "message": "AWS Access Key ID Value detected. This is a sensitive credential and should not be hardcoded here. Instead, read this value from an environment variable or keep it in a separate, private file.",
+        "severity": "ERROR"
+      }
+    },
+    {
+      "check_id": "yaml.kubernetes.security.run-as-non-root.run-as-non-root",
+      "path": "k8s/pod.yaml",
+      "start": {
+        "line": 5,
+        "col": 1,
+        "offset": 45
+      },
+      "end": {
+        "line": 5,
+        "col": 5,
+        "offset": 49
+      },
+      "extra": {
+        "message": "When running containers in Kubernetes, it's important to ensure that they  are properly secured to prevent privilege escalation attacks.  One potential vulnerability is when a container is allowed to ",
+        "severity": "INFO"
+      }
+    },
+    {
+      "check_id": "yaml.kubernetes.security.allow-privilege-escalation.allow-privilege-escalation",
+      "path": "k8s/pod.yaml",
+      "start": {
+        "line": 9,
+        "col": 5,
+        "offset": 98
+      },
+      "end": {
+        "line": 9,
+        "col": 20,
+        "offset": 113
+      },
+      "extra": {
+        "message": "In Kubernetes, each pod runs in its own isolated environment with its own set of security policies. However, certain container images may contain `setuid` or `setgid` binaries that could allow an atta",
+        "severity": "WARNING"
+      }
+    },
+    {
+      "check_id": "yaml.kubernetes.security.privileged-container.privileged-container",
+      "path": "k8s/pod.yaml",
+      "start": {
+        "line": 10,
+        "col": 7,
+        "offset": 121
+      },
+      "end": {
+        "line": 10,
+        "col": 23,
+        "offset": 137
+      },
+      "extra": {
+        "message": "Container or pod is running in privileged mode. This grants the container the equivalent of root capabilities on the host machine. This can lead to container escapes, privilege escalation, and other s",
+        "severity": "WARNING"
+      }
+    }
+  ],
+  "errors": []
+}

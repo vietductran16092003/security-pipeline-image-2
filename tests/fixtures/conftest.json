@@ -1,0 +1,13 @@
+[
+  {
+    "filename": "/project/Dockerfile",
+    "namespace": "docker",
+    "successes": 1,
+    "warnings": [
+      {"msg": "[WARN] Không có HEALTHCHECK - khuyến nghị thêm để orchestrator monitor container"}
+    ],
+    "failures": [
+      {"msg": "[DENY] USER cuối phải là non-root. Dùng 'USER <username>' hoặc 'USER <uid>' (uid != 0)"}
+    ]
+  }
+]

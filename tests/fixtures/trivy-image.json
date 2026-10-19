@@ -1,0 +1,102 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "scan-target:local",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "OS": {
+      "Family": "debian",
+      "Name": "10.13",
+      "EOSL": true
+    }
+  },
+  "Results": [
+    {
+      "Target": "scan-target:local (debian 10.13)",
+      "Class": "os-pkgs",
+      "Type": "debian",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2021-37600",
+          "VendorIDs": [
+            "DLA-3782-1"
+          ],
+          "PkgID": "bsdutils@1:2.33.1-0.1",
+          "PkgName": "bsdutils",
+          "InstalledVersion": "1:2.33.1-0.1",
+          "FixedVersion": "2.33.1-0.1+deb10u1",
+          "Status": "fixed",
+          "SeveritySource": "nvd",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-37600",
+          "Title": "util-linux: integer overflow can lead to buffer overflow in get_sem_elements() in sys-utils/ipcutils.c",
+          "Severity": "MEDIUM",
+          "PublishedDate": "2021-07-30T14:15:18.737Z",
+          "LastModifiedDate": "2026-10-14T12:17:15.117Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-28085",
+          "VendorIDs": [
+            "DLA-3782-1"
+          ],
+          "PkgID": "bsdutils@1:2.33.1-0.1",
+          "PkgName": "bsdutils",
+          "InstalledVersion": "1:2.33.1-0.1",
+          "FixedVersion": "2.33.1-0.1+deb10u1",
+          "Status": "fixed",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-28085",
+          "Title": "util-linux: CVE-2024-28085: wall: escape sequence injection",
+          "Severity": "LOW",
+          "PublishedDate": "2024-03-27T19:15:48.367Z",
+          "LastModifiedDate": "2026-06-17T07:20:56.09Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2016-2781",
+          "PkgID": "coreutils@8.30-3",
+          "PkgName": "coreutils",
+          "InstalledVersion": "8.30-3",
+          "Status": "will_not_fix",
+          "SeveritySource": "debian",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2016-2781",
+          "Title": "coreutils: Non-privileged session can escape to the parent session in chroot",
+          "Severity": "LOW",
+          "PublishedDate": "2017-02-07T15:59:00.333Z",
+          "LastModifiedDate": "2026-06-17T00:44:23.16Z"
+        }
+      ]
+    },
+    {
+      "Target": "Python",
+      "Class": "lang-pkgs",
+      "Type": "python-pkg",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2023-5752",
+          "PkgName": "pip",
+          "PkgPath": "usr/local/lib/python3.8/site-packages/pip-23.0.1.dist-info/METADATA",
+          "InstalledVersion": "23.0.1",
+          "FixedVersion": "23.3",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2023-5752",
+          "Title": "pip: Mercurial configuration injectable in repo revision when installing via pip",
+          "Severity": "MEDIUM",
+          "PublishedDate": "2023-10-25T18:17:44.867Z",
+          "LastModifiedDate": "2026-06-17T06:49:17.79Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-8869",
+          "PkgName": "pip",
+          "PkgPath": "usr/local/lib/python3.8/site-packages/pip-23.0.1.dist-info/METADATA",
+          "InstalledVersion": "23.0.1",
+          "FixedVersion": "25.3",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-8869",
+          "Title": "pip: pip missing checks on symbolic link extraction",
+          "Severity": "MEDIUM",
+          "PublishedDate": "2025-09-24T15:15:41.293Z",
+          "LastModifiedDate": "2026-09-26T00:10:00.127Z"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "Description": "Identified a pattern that may indicate AWS credentials, risking unauthorized cloud resource access and data breaches on AWS platforms.",
+    "StartLine": 1,
+    "EndLine": 1,
+    "StartColumn": 19,
+    "EndColumn": 38,
+    "Match": "AKIAIOSFODNN7REALKEY",
+    "Secret": "AKIAIOSFODNN7REALKEY",
+    "File": "/repo/config.env",
+    "SymlinkFile": "",
+    "Commit": "",
+    "Entropy": 3.5841837,
+    "Author": "",
+    "Email": "",
+    "Date": "",
+    "Message": "",
+    "Tags": [],
+    "RuleID": "aws-access-token",
+    "Fingerprint": "/repo/config.env:aws-access-token:1"
+  }
+]
