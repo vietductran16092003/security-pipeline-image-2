@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email báo cáo v4</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#dfe3ea; font-family:-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing:antialiased; }
+  .page { max-width:1320px; margin:0 auto; padding:32px 16px 48px; color:#0f172a; }
+  .page > h1 { font-size:22px; margin:0 0 4px; }
+  .page > .sub { color:#475569; margin:0 0 24px; font-size:14px; }
+  .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:32px; align-items:start; }
+  .cap { font-size:13px; font-weight:700; margin:0 0 4px; }
+  .capd { font-size:13px; color:#475569; margin:0 0 12px; }
+  .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ================= HƯỚNG 1: HERO TỐI + THÂN SÁNG ================= */
+  .e1 { max-width:600px; margin:0 auto; background:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 12px 32px rgba(15,23,42,.18); }
+  .e1 .hero { background:#0b1220; background-image:linear-gradient(135deg,#0b1220 0%,#1e1b4b 55%,#4c0519 100%); color:#fff; padding:24px 24px 0; }
+  .e1 .top { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#cbd5e1; }
+  .e1 .top b { color:#fff; font-size:13px; letter-spacing:.02em; }
+  .e1 .badge { background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.22); border-radius:999px; padding:4px 10px; }
+  .e1 .main { display:flex; gap:20px; align-items:center; margin-top:24px; }
+  .e1 .grade { width:96px; height:96px; flex:none; border-radius:20px; background:#ef4444; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:0 0 0 6px rgba(239,68,68,.25); }
+  .e1 .grade .g { font-size:48px; font-weight:900; line-height:1; }
+  .e1 .grade .gl { font-size:10px; font-weight:700; letter-spacing:.1em; margin-top:4px; opacity:.9; }
+  .e1 .grade.ok { background:#16a34a; box-shadow:0 0 0 6px rgba(22,163,74,.25); }
+  .e1 h2 { margin:0; font-size:26px; line-height:1.2; letter-spacing:-.02em; }
+  .e1 h2 em { font-style:normal; color:#fca5a5; }
+  .e1 .lead { margin:8px 0 0; font-size:14px; color:#cbd5e1; line-height:1.5; }
+  .e1 .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:rgba(255,255,255,.12); margin:24px -24px 0; }
+  .e1 .st { background:rgba(11,18,32,.55); padding:16px 12px; text-align:center; }
+  .e1 .st .n { font-size:28px; font-weight:800; }
+  .e1 .st .l { font-size:11px; font-weight:700; letter-spacing:.08em; color:#94a3b8; text-transform:uppercase; }
+  .e1 .st .d { font-size:12px; margin-top:2px; font-weight:600; }
+  .e1 .st.p1 .n { color:#f87171; } .e1 .st.p2 .n { color:#fbbf24; }
+  .e1 .upd { color:#fca5a5; } .e1 .dnd { color:#86efac; } .e1 .fl { color:#94a3b8; }
+
+  .e1 .bar { display:flex; height:10px; }
+  .e1 .bar i { display:block; height:100%; }
+
+  .e1 .body { padding:24px; }
+  .e1 .alert { display:flex; gap:12px; background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #dc2626; border-radius:10px; padding:14px 16px; }
+  .e1 .alert .ic { width:28px; height:28px; border-radius:8px; background:#dc2626; color:#fff; font-weight:900; display:flex; align-items:center; justify-content:center; flex:none; }
+  .e1 .alert b { display:block; font-size:14px; color:#7f1d1d; }
+  .e1 .alert span { font-size:13px; color:#991b1b; }
+  .e1 .alert .cve { font-family:ui-monospace, Consolas, monospace; font-weight:700; }
+  .e1 .alert.ok { background:#f0fdf4; border-color:#bbf7d0; border-left-color:#16a34a; }
+  .e1 .alert.ok .ic { background:#16a34a; } .e1 .alert.ok b { color:#14532d; } .e1 .alert.ok span { color:#166534; }
+
+  .e1 .chg { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+  .e1 .c { border-radius:12px; padding:16px; color:#fff; }
+  .e1 .c.new { background:#5b21b6; } .e1 .c.fix { background:#047857; }
+  .e1 .c .k { font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; opacity:.85; }
+  .e1 .c .v { font-size:32px; font-weight:900; margin-top:4px; }
+  .e1 .c .s { font-size:12px; opacity:.9; margin-top:2px; }
+
+  .e1 h3 { font-size:15px; margin:24px 0 12px; display:flex; justify-content:space-between; align-items:baseline; }
+  .e1 h3 small { font-size:12px; color:#64748b; font-weight:500; }
+  .e1 .row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #eef1f5; }
+  .e1 .row:last-child { border-bottom:0; }
+  .e1 .sev { width:40px; height:40px; border-radius:10px; flex:none; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:900; color:#fff; }
+  .e1 .sev.p1 { background:#dc2626; } .e1 .sev.p2 { background:#d97706; }
+  .e1 .info { flex:1; min-width:0; }
+  .e1 .info .t { font-size:14px; font-weight:700; color:#0f172a; }
+  .e1 .info .m { font-size:12px; color:#64748b; margin-top:2px; }
+  .e1 .tagnew { display:inline-block; background:#ede9fe; color:#5b21b6; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; margin-left:6px; vertical-align:2px; }
+  .e1 .fixv { text-align:right; font-size:12px; color:#64748b; }
+  .e1 .fixv b { display:block; color:#047857; font-size:13px; font-family:ui-monospace, Consolas, monospace; }
+
+  .e1 .cta { display:block; text-align:center; background:#dc2626; color:#fff; text-decoration:none; font-weight:800; font-size:15px; padding:16px; border-radius:12px; margin-top:24px; }
+  .e1 .cta.ok { background:#0f172a; }
+  .e1 .tools { display:flex; justify-content:center; gap:16px; font-size:12px; color:#64748b; margin-top:16px; flex-wrap:wrap; }
+  .e1 .tools b { color:#0f172a; }
+  .e1 .foot { background:#f8fafc; border-top:1px solid #eef1f5; padding:16px 24px; font-size:12px; color:#64748b; text-align:center; }
+
+  /* ================= HƯỚNG 2: TOÀN BỘ NỀN TỐI ================= */
+  .e2 { max-width:600px; margin:0 auto; background:#0a0f1a; border-radius:16px; overflow:hidden; color:#e2e8f0; box-shadow:0 12px 32px rgba(15,23,42,.35); border:1px solid #1e293b; }
+  .e2 .strip { height:6px; background:#ef4444; background-image:linear-gradient(90deg,#ef4444,#f97316,#eab308); }
+  .e2 .wrap { padding:24px; }
+  .e2 .top { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#94a3b8; }
+  .e2 .top b { color:#f8fafc; font-size:13px; }
+  .e2 .term { margin-top:20px; background:#020617; border:1px solid #1e293b; border-radius:10px; padding:12px 14px; font-family:ui-monospace, Consolas, monospace; font-size:12px; color:#94a3b8; line-height:1.7; }
+  .e2 .term .g { color:#4ade80; } .e2 .term .r { color:#f87171; } .e2 .term .y { color:#facc15; }
+  .e2 .big { display:flex; align-items:flex-end; gap:16px; margin-top:24px; }
+  .e2 .big .n { font-size:88px; font-weight:900; line-height:.85; color:#f87171; letter-spacing:-.04em; text-shadow:0 0 32px rgba(248,113,113,.45); }
+  .e2 .big .n.ok { color:#4ade80; text-shadow:0 0 32px rgba(74,222,128,.4); }
+  .e2 .big .t { font-size:20px; font-weight:800; color:#f8fafc; line-height:1.25; }
+  .e2 .big .t span { display:block; font-size:13px; font-weight:500; color:#94a3b8; margin-top:4px; }
+  .e2 .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:24px; }
+  .e2 .g1 { background:#111827; border:1px solid #1f2937; border-radius:10px; padding:12px; }
+  .e2 .g1 .l { font-size:11px; color:#94a3b8; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  .e2 .g1 .n { font-size:22px; font-weight:800; color:#f8fafc; margin-top:2px; }
+  .e2 .g1 .d { font-size:12px; font-weight:600; }
+  .e2 .upd { color:#f87171; } .e2 .dnd { color:#4ade80; } .e2 .fl { color:#64748b; }
+  .e2 .g1.new { border-color:#6d28d9; background:#1e1033; } .e2 .g1.new .n { color:#c4b5fd; }
+  .e2 .g1.fix { border-color:#047857; background:#052e22; } .e2 .g1.fix .n { color:#6ee7b7; }
+  .e2 h3 { font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; margin:28px 0 8px; }
+  .e2 .item { display:flex; gap:12px; align-items:center; padding:12px; border-radius:10px; background:#111827; border:1px solid #1f2937; margin-bottom:8px; }
+  .e2 .item.p1 { border-left:4px solid #ef4444; } .e2 .item.p2 { border-left:4px solid #f59e0b; }
+  .e2 .item .lv { font-size:11px; font-weight:900; padding:3px 8px; border-radius:6px; flex:none; }
+  .e2 .item.p1 .lv { background:#ef4444; color:#fff; } .e2 .item.p2 .lv { background:#f59e0b; color:#111827; }
+  .e2 .item .x { flex:1; min-width:0; }
+  .e2 .item .c { font-family:ui-monospace, Consolas, monospace; font-size:13px; font-weight:700; color:#f8fafc; }
+  .e2 .item .p { font-size:12px; color:#94a3b8; margin-top:2px; }
+  .e2 .item .f { font-family:ui-monospace, Consolas, monospace; font-size:12px; color:#4ade80; text-align:right; }
+  .e2 .item .f small { display:block; color:#64748b; font-family:inherit; }
+  .e2 .nw { background:#6d28d9; color:#fff; font-size:10px; font-weight:800; padding:1px 6px; border-radius:5px; margin-left:6px; vertical-align:1px; font-family:-apple-system,"Segoe UI",sans-serif; }
+  .e2 .cta { display:block; text-align:center; background:#f8fafc; color:#0a0f1a; text-decoration:none; font-weight:800; font-size:15px; padding:16px; border-radius:12px; margin-top:24px; }
+  .e2 .foot { border-top:1px solid #1e293b; padding:16px 24px; font-size:12px; color:#64748b; text-align:center; }
+
+  @media (max-width:480px) {
+    .e1 .main { flex-direction:column; align-items:flex-start; }
+    .e1 .stats { grid-template-columns:repeat(2,1fr); }
+    .e1 .chg { grid-template-columns:1fr; }
+    .e2 .big .n { font-size:72px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Bản v4: nổi bật hơn, 2 hướng</h1>
+  <p class="sub">Cùng dữ liệu: có 3 lỗi P1. Mỗi hướng có một điểm nhấn lớn để mở mail ra là thấy ngay.</p>
+
+  <div class="cols">
+
+    <!-- ========== HƯỚNG 1 ========== -->
+    <div>
+      <p class="cap">Hướng 1: Đầu email tối, thân sáng</p>
+      <p class="capd">Đầu email nền tối chuyển sang đỏ, có ô "điểm bảo mật" lớn (A đến F). Thân email nền trắng, dễ đọc.</p>
+
+      <div class="e1">
+        <div class="hero">
+          <div class="top"><b>SECURITY PIPELINE</b><span class="badge mono">my-api · main</span></div>
+          <div class="main">
+            <div class="grade"><div class="g">D</div><div class="gl">ĐIỂM</div></div>
+            <div>
+              <h2><em>3 lỗi P1</em> cần xử lý ngay</h2>
+              <p class="lead">Có 1 lỗi P1 mới từ commit <span class="mono">a1b2c3d</span>. Quét lúc 09:42, 19/10/2026.</p>
+            </div>
+          </div>
+          <div class="stats num">
+            <div class="st p1"><div class="l">P1</div><div class="n">3</div><div class="d upd">▲ 1</div></div>
+            <div class="st p2"><div class="l">P2</div><div class="n">12</div><div class="d dnd">▼ 2</div></div>
+            <div class="st"><div class="l">Backlog</div><div class="n">41</div><div class="d dnd">▼ 2</div></div>
+            <div class="st"><div class="l">Tổng</div><div class="n">56</div><div class="d dnd">▼ 3</div></div>
+          </div>
+        </div>
+        <div class="bar"><i style="width:5%;background:#dc2626"></i><i style="width:21%;background:#f59e0b"></i><i style="width:74%;background:#cbd5e1"></i></div>
+
+        <div class="body">
+          <div class="alert">
+            <div class="ic">!</div>
+            <div><b>Lỗi mới nghiêm trọng nhất</b><span><span class="cve">CVE-2024-3094</span> trong xz-utils 5.6.0. Nâng lên 5.6.2.</span></div>
+          </div>
+
+          <div class="chg num">
+            <div class="c new"><div class="k">Lỗi mới</div><div class="v">+2</div><div class="s">1 P1 · 1 P2</div></div>
+            <div class="c fix"><div class="k">Đã sửa</div><div class="v">−5</div><div class="s">openssl, krb5 và 3 lỗi khác</div></div>
+          </div>
+
+          <h3>Cần xử lý trước <small>5 / 15</small></h3>
+          <div class="row"><div class="sev p1">P1</div><div class="info"><div class="t mono">CVE-2024-3094<span class="tagnew">MỚI</span></div><div class="m">xz-utils · 5.6.0</div></div><div class="fixv">nâng lên<b>5.6.2</b></div></div>
+          <div class="row"><div class="sev p1">P1</div><div class="info"><div class="t mono">CVE-2023-44487</div><div class="m">golang.org/x/net · 0.15.0</div></div><div class="fixv">nâng lên<b>0.17.0</b></div></div>
+          <div class="row"><div class="sev p1">P1</div><div class="info"><div class="t mono">CVE-2023-4863</div><div class="m">libwebp · 1.2.4</div></div><div class="fixv">nâng lên<b>1.3.2</b></div></div>
+          <div class="row"><div class="sev p2">P2</div><div class="info"><div class="t mono">CVE-2023-38545</div><div class="m">curl · 7.88.1</div></div><div class="fixv">nâng lên<b>8.4.0</b></div></div>
+          <div class="row"><div class="sev p2">P2</div><div class="info"><div class="t mono">CVE-2023-5363<span class="tagnew">MỚI</span></div><div class="m">openssl · 3.0.2</div></div><div class="fixv">nâng lên<b>3.0.12</b></div></div>
+
+          <a class="cta" href="#">Xem đủ 56 lỗi trên dashboard →</a>
+          <div class="tools"><span>Gitleaks <b>0 secret</b></span><span>Semgrep <b>2 cảnh báo</b></span><span>Trivy <b>56 CVE</b></span></div>
+        </div>
+        <div class="foot">Gửi tự động sau mỗi lần quét · run #128 · <a href="#" style="color:#475569">xem log</a></div>
+      </div>
+    </div>
+
+    <!-- ========== HƯỚNG 2 ========== -->
+    <div>
+      <p class="cap">Hướng 2: Toàn bộ nền tối, phong cách terminal</p>
+      <p class="capd">Kiểu hacker hoặc DevSecOps: số P1 thật to và phát sáng, có khung terminal tóm tắt kết quả từng công cụ.</p>
+
+      <div class="e2">
+        <div class="strip"></div>
+        <div class="wrap">
+          <div class="top"><b>▍SECURITY PIPELINE</b><span class="mono">my-api / main / a1b2c3d</span></div>
+
+          <div class="big">
+            <div class="n num">3</div>
+            <div class="t">lỗi P1 cần xử lý ngay<span>19/10/2026 09:42 · tăng 1 so với lần trước</span></div>
+          </div>
+
+          <div class="term">
+            <span class="g">✔</span> gitleaks &nbsp;&nbsp;0 secret<br>
+            <span class="y">▲</span> semgrep &nbsp;&nbsp;&nbsp;2 cảnh báo<br>
+            <span class="r">✖</span> trivy &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;56 CVE &nbsp;(3 P1 · 12 P2 · 41 backlog)
+          </div>
+
+          <div class="grid num">
+            <div class="g1"><div class="l">P2</div><div class="n">12</div><div class="d dnd">▼ 2</div></div>
+            <div class="g1 new"><div class="l">Mới</div><div class="n">+2</div><div class="d fl">1 P1 · 1 P2</div></div>
+            <div class="g1 fix"><div class="l">Đã sửa</div><div class="n">−5</div><div class="d fl">so với 18/10</div></div>
+          </div>
+
+          <h3>Cần xử lý trước</h3>
+          <div class="item p1"><span class="lv">P1</span><div class="x"><div class="c">CVE-2024-3094<span class="nw">MỚI</span></div><div class="p">xz-utils 5.6.0</div></div><div class="f">5.6.2<small>bản vá</small></div></div>
+          <div class="item p1"><span class="lv">P1</span><div class="x"><div class="c">CVE-2023-44487</div><div class="p">golang.org/x/net 0.15.0</div></div><div class="f">0.17.0<small>bản vá</small></div></div>
+          <div class="item p1"><span class="lv">P1</span><div class="x"><div class="c">CVE-2023-4863</div><div class="p">libwebp 1.2.4</div></div><div class="f">1.3.2<small>bản vá</small></div></div>
+          <div class="item p2"><span class="lv">P2</span><div class="x"><div class="c">CVE-2023-38545</div><div class="p">curl 7.88.1</div></div><div class="f">8.4.0<small>bản vá</small></div></div>
+          <div class="item p2"><span class="lv">P2</span><div class="x"><div class="c">CVE-2023-5363<span class="nw">MỚI</span></div><div class="p">openssl 3.0.2</div></div><div class="f">3.0.12<small>bản vá</small></div></div>
+
+          <a class="cta" href="#">Mở dashboard →</a>
+        </div>
+        <div class="foot">Gửi tự động sau mỗi lần quét · run #128</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
