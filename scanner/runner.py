@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -175,6 +176,11 @@ def run_scan(root: Path, out: Path, scanner_dir: Path, executor: Executor = defa
     return sections
 
 
+# Chỉ đếm `nosemgrep` nằm trong chú thích code, không đếm tài liệu hay chuỗi bình thường.
+NOSEMGREP_COMMENT = re.compile(r"(?:#|//|--|/\*|<!--)\s*nosemgrep\b")
+DOC_SUFFIXES = {".md", ".markdown", ".rst", ".txt", ".adoc"}
+
+
 def count_ignore_rules(root: Path) -> int:
     root = Path(root)
     total = 0
@@ -187,10 +193,13 @@ def count_ignore_rules(root: Path) -> int:
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and d not in EXCLUDED_DIRS]
         for name in filenames:
             path = Path(dirpath) / name
+            if path.suffix.lower() in DOC_SUFFIXES:
+                continue
             try:
                 if path.stat().st_size > 1_000_000:
                     continue
-                total += path.read_text(encoding="utf-8", errors="ignore").count("nosemgrep")
+                text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
+            total += len(NOSEMGREP_COMMENT.findall(text))
     return total

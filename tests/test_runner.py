@@ -189,6 +189,14 @@ def test_docker_run_commands_are_named(proj, out):
                 assert "--name" in c
 
 
+def test_nosemgrep_only_counted_in_code_comments(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1  # nosemgrep\nprint('nosemgrep is a word')\n")
+    (tmp_path / "b.js").write_text("eval(x) // nosemgrep: javascript.eval\n")
+    (tmp_path / "README.md").write_text("Use `# nosemgrep` to ignore.\n# nosemgrep\n")
+    (tmp_path / "notes.txt").write_text("# nosemgrep\n")
+    assert count_ignore_rules(tmp_path) == 2
+
+
 def test_count_ignore_rules(tmp_path):
     (tmp_path / ".trivyignore").write_text("# c\nCVE-1\n\nCVE-2\n")
     (tmp_path / ".gitleaksignore").write_text("abc:a.env:aws:1\n")
