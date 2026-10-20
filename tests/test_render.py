@@ -136,6 +136,19 @@ def test_summary_mentions_errors():
     assert "Điểm tạm" in md
 
 
+def test_local_run_has_no_dead_links():
+    r = rep_p1(1)
+    r.run_url = ""
+    html = render_email(r, first())
+    assert 'href=""' not in html and "Xem đủ" not in html
+
+
+def test_secret_listed_first_within_priority():
+    secret = Finding("gitleaks", "secret", "aws-access-token", "CRITICAL", "t", file="a.env", priority="P1")
+    fs = [vuln("CVE-2019-1", "P1", severity="CRITICAL"), vuln("CVE-2018-2", "P1", severity="CRITICAL"), secret]
+    assert top_findings(rep_with(*fs), 3)[0].kind == "secret"
+
+
 def test_summary_truncates():
     md = render_summary(rep_many(500), first())
     assert "300 finding khác" in md and md.count("| CVE-2024-") == 200

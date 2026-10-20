@@ -24,7 +24,8 @@ _env = Environment(loader=FileSystemLoader(Path(__file__).parent / "templates"),
 def top_findings(report: Report, n: int = 5) -> list[Finding]:
     return sorted(
         report.all_findings(),
-        key=lambda f: (PRIORITY_ORDER.get(f.priority, 9), SEVERITY_ORDER.get(f.severity, 9), f.rule_id),
+        key=lambda f: (PRIORITY_ORDER.get(f.priority, 9), f.kind != "secret",
+                       SEVERITY_ORDER.get(f.severity, 9), f.rule_id),
     )[:n]
 
 
