@@ -149,6 +149,24 @@ def test_secret_listed_first_within_priority():
     assert top_findings(rep_with(*fs), 3)[0].kind == "secret"
 
 
+def test_long_rule_id_in_alert_can_wrap():
+    """Mã rule Semgrep rất dài không được làm email tràn ngang trên điện thoại."""
+    long_id = "python.lang.security.audit.subprocess-shell-true.subprocess-shell-true"
+    f = Finding("semgrep", "code", long_id, "HIGH", "shell=True", file="app.py", line=3, priority="P1")
+    html = render_email(rep_with(f), first())
+    alert = html.split("border-left:4px", 1)[1].split("</table>", 1)[0]
+    assert long_id in alert and "overflow-wrap:anywhere" in alert
+
+
+def test_local_footer_without_findings():
+    r = rep_p1(0)
+    r.run_url = ""
+    r.sections = [s for s in r.sections]
+    for s in r.sections:
+        s.findings, s.status = [], "clean"
+    assert "đủ 0 lỗi" not in render_email(r, first())
+
+
 def test_summary_truncates():
     md = render_summary(rep_many(500), first())
     assert "300 finding khác" in md and md.count("| CVE-2024-") == 200

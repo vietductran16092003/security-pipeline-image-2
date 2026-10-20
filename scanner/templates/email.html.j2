@@ -75,7 +75,7 @@
       </td>
       <td style="padding:14px 16px 14px 12px;">
         <div style="font-size:14px;font-weight:700;color:{{ a_tx }};">{{ alert.title }}</div>
-        <div style="font-size:13px;line-height:1.5;color:{{ a_tx }};">{% if alert.code %}<b style="font-family:Consolas,'SF Mono',monospace;">{{ alert.code }}</b>: {% endif %}{{ alert.text }}</div>
+        <div style="font-size:13px;line-height:1.5;color:{{ a_tx }};overflow-wrap:anywhere;word-break:break-word;">{% if alert.code %}<b style="font-family:Consolas,'SF Mono',monospace;">{{ alert.code }}</b>: {% endif %}{{ alert.text }}</div>
       </td>
     </tr>
   </table>
@@ -161,7 +161,7 @@
 
 <!-- Footer -->
 <tr><td style="background:#f8fafc;border-top:1px solid #eef1f5;padding:16px 24px;font-size:12px;color:#64748b;text-align:center;">
-  {% if r.run_url %}Gửi tự động sau mỗi lần quét · run #{{ r.run_id }} · <a href="{{ r.run_url }}" style="color:#475569;">xem log</a>{% else %}Chạy thủ công trên máy · đủ {{ total }} lỗi nằm trong report.json{% endif %}
+  {% if r.run_url %}Gửi tự động sau mỗi lần quét · run #{{ r.run_id }} · <a href="{{ r.run_url }}" style="color:#475569;">xem log</a>{% else %}Chạy thủ công trên máy{% if total %} · đủ {{ total }} lỗi nằm trong report.json{% endif %}{% endif %}
 </td></tr>
 
 </table>
