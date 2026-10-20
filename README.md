@@ -16,7 +16,7 @@ Mọi thứ chạy trên runner miễn phí `ubuntu-latest` của GitHub. Không
        permissions:
          contents: read
          actions: read
-       uses: vietductran16092003/security-scan-action/.github/workflows/scan.yml@v1
+       uses: vietductran16092003/security-pipeline-image-2/.github/workflows/scan.yml@v1
        secrets:
          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}

@@ -3,7 +3,7 @@ name: Security scan
 # Reusable workflow. Dự án khác gọi bằng:
 #   jobs:
 #     scan:
-#       uses: vietductran16092003/security-scan-action/.github/workflows/scan.yml@v1
+#       uses: vietductran16092003/security-pipeline-image-2/.github/workflows/scan.yml@v1
 #       secrets:
 #         SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
 #         SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
@@ -40,7 +40,7 @@ jobs:
       - name: Checkout bộ quét
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: vietductran16092003/security-scan-action
+          repository: vietductran16092003/security-pipeline-image-2
           ref: ${{ inputs.scanner-ref }}
           path: scanner-src
 
