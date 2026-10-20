@@ -35,6 +35,13 @@ def test_outputs_read_from_runner_temp():
             assert "${{ runner.temp }}/scan-out" in s["run"]
 
 
+def test_self_scan_runs_policy_tests():
+    from scanner.runner import TOOL_IMAGES
+    self_scan = yaml.safe_load((WF.parent / "self-scan.yml").read_text(encoding="utf-8"))
+    runs = " ".join(s.get("run", "") for s in self_scan["jobs"]["test"]["steps"])
+    assert TOOL_IMAGES["conftest"] in runs and "verify" in runs and "tests/policy" in runs
+
+
 def test_artifact_upload_survives_rerun():
     upload = next(s for s in _steps() if "upload-artifact" in s.get("uses", ""))
     assert upload["with"]["overwrite"] is True

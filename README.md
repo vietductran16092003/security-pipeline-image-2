@@ -66,6 +66,10 @@ Tìm thấy lỗi **không** làm workflow đỏ, nên không chặn merge. Work
 
 Hiện chỉ hỗ trợ `Dockerfile` ở thư mục gốc của dự án.
 
+## Phiên bản
+
+Dòng `uses: ...scan.yml@v1` chọn phiên bản workflow. Workflow này tải mã bộ quét theo input `scanner-ref`, mặc định cũng là `v1`. Nếu bạn gọi một phiên bản khác (ví dụ `@main` để thử), hãy truyền thêm `with: scanner-ref: main` để workflow và mã bộ quét cùng một phiên bản.
+
 ## Mức ưu tiên
 
 Mỗi finding được Rule Engine (`rules.yaml`) xếp vào một mức:

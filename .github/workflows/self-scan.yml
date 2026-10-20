@@ -14,6 +14,8 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
+      - name: Test Dockerfile policy
+        run: docker run --rm -v "$PWD:/p" -w /p openpolicyagent/conftest:v0.56.0 verify --policy policy --policy tests/policy
 
   scan:
     needs: test
