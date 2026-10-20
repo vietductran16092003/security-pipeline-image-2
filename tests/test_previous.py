@@ -104,6 +104,36 @@ def test_zip_redirect_drops_auth_header(monkeypatch):
     assert all(r.get_header("Authorization") == "Bearer secret-token" for r in api)
 
 
+def test_fetch_pages_until_branch_found(monkeypatch):
+    """Nhánh ít push có artifact nằm ở trang 2 vẫn phải được tìm thấy."""
+    rep = make_report([vuln("A")])
+    page1 = [a(100 + i, "dev", "2026-10-15") for i in range(100)]
+    page2 = [a(9, "main", "2026-10-01")]
+    seen = []
+
+    def fake(req, timeout=None):
+        url = req.full_url
+        seen.append(url)
+        if "/zip" in url:
+            return FakeResp(_zip(rep.to_json()))
+        arts = page2 if "page=2" in url else page1
+        return FakeResp(json.dumps({"artifacts": arts}).encode())
+    patch_open(monkeypatch, fake)
+    assert fetch_previous_report("o/r", "main", "1", "t") == rep
+    assert any("/artifacts/9/zip" in u for u in seen)
+
+
+def test_fetch_stops_at_page_limit(monkeypatch):
+    calls = []
+
+    def fake(req, timeout=None):
+        calls.append(req.full_url)
+        return FakeResp(json.dumps({"artifacts": [a(1, "dev", "2026-10-01")] * 100}).encode())
+    patch_open(monkeypatch, fake)
+    assert fetch_previous_report("o/r", "main", "1", "t") is None
+    assert len(calls) == previous.MAX_PAGES
+
+
 def test_fetch_without_token_skips_network(monkeypatch):
     def boom(*a, **k):
         raise AssertionError("không được gọi mạng")

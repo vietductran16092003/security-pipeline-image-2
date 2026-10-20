@@ -13,6 +13,7 @@ from .models import Report
 
 API = "https://api.github.com"
 ARTIFACT_NAME = "security-report"
+MAX_PAGES = 5
 
 
 def select_previous_artifact(artifacts: list[dict], branch: str, current_run_id: str,
@@ -62,8 +63,15 @@ def fetch_previous_report(repo: str, branch: str, run_id: str, token: str) -> Op
     if not token or not repo:
         return None
     try:
-        listing = json.loads(_get(f"{API}/repos/{repo}/actions/artifacts?name={ARTIFACT_NAME}&per_page=100", token))
-        art_id = select_previous_artifact(listing.get("artifacts") or [], branch, run_id)
+        art_id = None
+        # API trả artifact mới nhất trước; đọc từng trang tới khi gặp artifact của nhánh này.
+        for page in range(1, MAX_PAGES + 1):
+            listing = json.loads(_get(
+                f"{API}/repos/{repo}/actions/artifacts?name={ARTIFACT_NAME}&per_page=100&page={page}", token))
+            artifacts = listing.get("artifacts") or []
+            art_id = select_previous_artifact(artifacts, branch, run_id)
+            if art_id is not None or len(artifacts) < 100:
+                break
         if art_id is None:
             return None
         data = _get(f"{API}/repos/{repo}/actions/artifacts/{art_id}/zip", token)
