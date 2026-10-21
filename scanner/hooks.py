@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
 START = "# >>> security-scan >>>"
 END = "# <<< security-scan <<<"
-NL_FLAG = "# security-scan: nl-added"
+ORIG = "pre-push.security-scan-orig"
 SCANNER_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -46,84 +47,66 @@ def _sh_quote(value: str) -> str:
 
 
 def _block(scanner_cmd: str) -> str:
-    # Khối nằm ngay sau dòng shebang, mọi dòng chỉ dùng LF. stdin được lưu một lần để hook cũ
-    # đọc cùng danh sách ref; bẫy EXIT chạy bộ quét sau khi hook cũ kết thúc (kể cả `exit 0`).
-    # Hook cũ dùng `exec` để thay tiến trình thì vẫn thoát được khối này.
+    # Hook cũ (nếu có) được dời sang file ORIG và chạy như tiến trình con, nên shebang riêng,
+    # `exit`, `exec`, trap... của nó không ảnh hưởng tới việc quét.
     py = _sh_quote(scanner_cmd)
     lines = [
         START,
-        '_ss_in="$(mktemp)"; cat >"$_ss_in"; exec <"$_ss_in"',
-        "trap '_ss_st=$?; trap - EXIT; "
-        'if [ "$_ss_st" -eq 0 ]; then _ss_root="$(git rev-parse --show-toplevel)"; '
-        f'if [ -x {py} ]; then PYTHONPATH={_sh_quote(str(SCANNER_DIR))} {py} -m scanner prepush --root "$_ss_root" <"$_ss_in"; _ss_st=$?; '
-        'else echo "security-scan: KHÔNG tìm thấy bộ quét, bỏ qua kiểm tra (hãy cài lại hook)." >&2; fi; fi; '
-        'rm -f "$_ss_in"; exit "$_ss_st"\' EXIT',
+        '_ss_dir="$(dirname "$0")"',
+        '_ss_in="$(mktemp)"',
+        "trap 'rm -f \"$_ss_in\"' EXIT INT TERM",
+        'cat >"$_ss_in"',
+        '_ss_st=0',
+        f'if [ -x "$_ss_dir/{ORIG}" ]; then',
+        f'  "$_ss_dir/{ORIG}" "$@" <"$_ss_in" || _ss_st=$?',
+        'fi',
+        'if [ "$_ss_st" -eq 0 ]; then',
+        '  _ss_root="$(git rev-parse --show-toplevel)"',
+        f'  if [ -x {py} ]; then',
+        f'    PYTHONPATH={_sh_quote(str(SCANNER_DIR))} {py} -m scanner prepush --root "$_ss_root" <"$_ss_in" || _ss_st=$?',
+        '  else',
+        '    echo "security-scan: KHÔNG tìm thấy bộ quét, bỏ qua kiểm tra (hãy cài lại hook)." >&2',
+        '  fi',
+        'fi',
+        'rm -f "$_ss_in"',
+        'exit "$_ss_st"',
         END,
     ]
-    return "\n".join(lines) + "\n"
+    return "#!/bin/sh\n" + "\n".join(lines) + "\n"
 
-def _strip(data: bytes) -> tuple[bytes, bool]:
-    """Cắt khối của ta, trả (nội dung còn lại, có khối hay không)."""
-    s = data.decode("utf-8", errors="surrogateescape")
-    i = s.find(START)
-    if i < 0:
-        return data, False
-    j = s.find(END, i)
-    if j < 0:
-        return data, False
-    j += len(END)
-    if s.startswith("\r\n", j):
-        j += 2
-    elif s.startswith("\n", j):
-        j += 1
-    head = s[:i]
-    if NL_FLAG in s[i:j]:
-        # ta đã thêm một dấu xuống dòng cuối hook cũ: bỏ nó đi
-        if head.endswith("\r\n"):
-            head = head[:-2]
-        elif head.endswith("\n"):
-            head = head[:-1]
-    return (head + s[j:]).encode("utf-8", errors="surrogateescape"), True
+
+def _ours(path: Path) -> bool:
+    try:
+        return START.encode() in path.read_bytes()
+    except OSError:
+        return False
 
 
 def install_hook(repo: Path, scanner_cmd: str) -> str:
     path, err = _hooks_file(Path(repo))
     if path is None:
         return err
-    if path.exists():
-        old, _ = _strip(path.read_bytes())
-    else:
-        old = b"#!/bin/sh\n"
-    block = _block(scanner_cmd)
-    if old.startswith(b"#!"):
-        nl = old.find(b"\n")
-        if nl < 0:
-            old += b"\n"
-            block = block.replace(START + "\n", START + "\n" + NL_FLAG + "\n", 1)
-            nl = len(old) - 1
-        head, rest = old[: nl + 1], old[nl + 1:]
-    else:
-        head, rest = b"", old
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(head + block.encode("utf-8") + rest)
+    orig = path.with_name(ORIG)
+    if path.exists() and not _ours(path):
+        os.replace(path, orig)
+    path.write_bytes(_block(scanner_cmd).encode("utf-8"))
     try:
         path.chmod(0o755)
     except OSError:
         pass
     return f"Đã cài hook kiểm tra trước khi push cho: {Path(repo)}"
 
+
 def uninstall_hook(repo: Path) -> str:
     path, err = _hooks_file(Path(repo))
     if path is None:
         return err
-    if not path.exists():
+    if not path.exists() or not _ours(path):
         return "Dự án này chưa cài hook của bộ quét, không có gì để gỡ."
-    rest, found = _strip(path.read_bytes())
-    if not found:
-        return "Hook hiện có không phải của bộ quét, giữ nguyên không đụng tới."
-    text = rest.decode("utf-8", errors="surrogateescape")
-    if text.strip() == "" or (text.startswith("#!") and text.strip().count("\n") == 0):
-        path.unlink()
+    orig = path.with_name(ORIG)
+    if orig.exists():
+        os.replace(orig, path)
     else:
-        path.write_bytes(rest)
+        path.unlink()
     return f"Đã gỡ hook kiểm tra trước khi push khỏi: {Path(repo)}"

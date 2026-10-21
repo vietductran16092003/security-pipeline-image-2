@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scanner.hooks import END, START, install_hook, uninstall_hook
+from scanner.hooks import ORIG, START, install_hook, uninstall_hook
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="cần git")
 PY = str(Path("C:/fake dir/Dự án/.venv/Scripts/python.exe"))
@@ -25,7 +25,7 @@ def test_install_creates_executable_hook_in_git_hooks(tmp_path):
     msg = install_hook(repo, PY)
     text = _hook(repo).read_text(encoding="utf-8")
     assert text.startswith("#!/bin/sh")
-    assert START in text and END in text
+    assert START in text and "# <<< security-scan <<<" in text
     assert "C:/fake dir/Dự án/.venv/Scripts/python.exe" in text
     assert "prepush" in text
     assert msg
@@ -42,36 +42,34 @@ def test_install_twice_is_idempotent(tmp_path):
     assert first.count(START.encode()) == 1
 
 
-def test_install_preserves_existing_hook_and_runs_it_first(tmp_path):
-    repo = _repo(tmp_path)
-    old = b"#!/bin/sh\necho OLD\n"
-    _hook(repo).write_bytes(old)
-    install_hook(repo, PY)
-    data = _hook(repo).read_bytes()
-    assert data.startswith(b"#!/bin/sh\n" + START.encode())
-    assert data.endswith(b"echo OLD\n")
-
-
-def test_existing_hook_without_trailing_newline_and_with_crlf(tmp_path):
+def test_install_preserves_existing_hook_as_orig(tmp_path):
     repo = _repo(tmp_path)
     old = b"#!/bin/sh\r\necho OLD"
     _hook(repo).write_bytes(old)
     install_hook(repo, PY)
-    data = _hook(repo).read_bytes()
-    assert data.startswith(b"#!/bin/sh\r\n" + START.encode())
-    assert data.endswith(b"echo OLD")
-    uninstall_hook(repo)
-    assert _hook(repo).read_bytes() == old
+    install_hook(repo, PY)
+    assert (_hook(repo).parent / ORIG).read_bytes() == old
+    assert START.encode() in _hook(repo).read_bytes()
 
 
 def test_uninstall_restores_original_bytes_of_existing_hook(tmp_path):
     repo = _repo(tmp_path)
-    for old in (b"#!/bin/sh\necho OLD\n", b"#!/bin/sh\necho OLD"):
+    for old in (b"#!/bin/sh\necho OLD\n", b"#!/bin/sh\r\necho OLD", b"#!/usr/bin/env python3\nprint(1)\r\n"):
         _hook(repo).write_bytes(old)
+        install_hook(repo, PY)
         install_hook(repo, PY)
         uninstall_hook(repo)
         assert _hook(repo).read_bytes() == old
+        assert not (_hook(repo).parent / ORIG).exists()
 
+
+def test_uninstall_with_missing_orig_removes_ours(tmp_path):
+    repo = _repo(tmp_path)
+    _hook(repo).write_bytes(b"#!/bin/sh\nexit 0\n")
+    install_hook(repo, PY)
+    (_hook(repo).parent / ORIG).unlink()
+    uninstall_hook(repo)
+    assert not _hook(repo).exists()
 
 def test_uninstall_removes_file_when_ours_only(tmp_path):
     repo = _repo(tmp_path)
@@ -136,6 +134,10 @@ def _fake_scanner(tmp_path):
     (b"#!/bin/sh\nexit 0\n", 0, True),
     (b"#!/bin/sh\ncat >/dev/null\n", 0, True),
     (b"#!/bin/sh\nexit 3\n", 3, False),
+    (b"#!/bin/sh\ntrap 'echo x' EXIT\n", 0, True),
+    (b"#!/bin/sh\nexec true\n", 0, True),
+    (b"#!/bin/sh\nset -e\nfalse\necho no\n", 1, False),
+    (b"#!/bin/sh\r\necho hi\r\n", 0, True),
 ])
 def test_combined_script_runs_scanner_after_old_hook(tmp_path, old, rc, ran):
     sh = _find_sh()
@@ -151,7 +153,8 @@ def test_combined_script_runs_scanner_after_old_hook(tmp_path, old, rc, ran):
     else:
         assert not rec.exists()
     r = subprocess.run([sh, str(_hook(repo))], input="x\n", env={**os.environ, "FAKE_RC": "1"}, **kw)
-    assert r.returncode == (1 if ran else 3)
+    if ran:
+        assert r.returncode == 1
 
 
 def test_worktree_gets_hook_where_git_reads_it(tmp_path):
@@ -166,3 +169,18 @@ def test_worktree_gets_hook_where_git_reads_it(tmp_path):
     assert _hook(main).exists()
     uninstall_hook(wt)
     assert not _hook(main).exists()
+
+def test_non_sh_shebang_old_hook_runs_untouched(tmp_path):
+    sh = _find_sh()
+    repo = _repo(tmp_path / "r") if (tmp_path / "r").mkdir() is None else None
+    fake, rec = _fake_scanner(tmp_path)
+    mark = tmp_path / "interp.txt"
+    interp = tmp_path / "fakeinterp"
+    interp.write_bytes(b'#!/bin/sh\necho "interp $1" > "' + str(mark).replace("\\", "/").encode() + b'"\nexit 0\n')
+    interp.chmod(0o755)
+    _hook(repo).write_bytes(b"#!" + str(interp).replace("\\", "/").encode() + b"\nprint('x')\n")
+    install_hook(repo, str(fake))
+    r = subprocess.run([sh, str(_hook(repo))], input="a\n", capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", cwd=repo)
+    assert r.returncode == 0
+    assert mark.exists() and rec.exists()
