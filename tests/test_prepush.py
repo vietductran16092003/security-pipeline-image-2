@@ -61,7 +61,7 @@ def test_parse_and_ranges():
 def test_blocks_on_secret_in_pushed_commits(proj, tmp_path, capsys):
     ex = Exec(tmp_path, overrides={"trivy-fs.json": EMPTY_TRIVY})
     assert prepush(proj, line(), SCANNER_DIR, ex, FakeDocker()) == 1
-    out = capsys.readouterr().out
+    out = capsys.readouterr().err
     assert "config.env" in out and "aws-access-token" in out
     assert "git push --no-verify" in out and "SCAN_SKIP=1" in out
     assert "AKIAIOSFODNN7REALKEY" not in out
@@ -72,7 +72,7 @@ def test_blocks_on_secret_in_pushed_commits(proj, tmp_path, capsys):
 def test_blocks_on_p1_dependency(proj, tmp_path, capsys):
     ex = Exec(tmp_path, overrides={"gitleaks.json": "[]"})
     assert prepush(proj, line(), SCANNER_DIR, ex, FakeDocker()) == 1
-    assert "[P1]" in capsys.readouterr().out
+    assert "[P1]" in capsys.readouterr().err
 
 
 def test_allows_when_only_p2_or_backlog(proj, tmp_path):
@@ -126,7 +126,7 @@ def test_trivy_p1_plus_gitleaks_error_still_blocks(proj, tmp_path, capsys):
     ex.exit_codes = {"zricethezav/gitleaks": 2}
     assert prepush(proj, line(), SCANNER_DIR, ex, FakeDocker()) == 1
     cap = capsys.readouterr()
-    assert "[P1]" in cap.out and "secrets" in cap.err
+    assert "[P1]" in cap.err and "secrets" in cap.err
 
 
 def test_gitleaks_error_alone_allows_with_stderr_warning(proj, tmp_path, capsys):
@@ -149,4 +149,21 @@ def test_multi_ref_log_opts_single_not_remotes(proj, tmp_path):
 def test_malformed_line_warns(proj, tmp_path, capsys):
     ex = Exec(tmp_path, overrides={"gitleaks.json": "[]", "trivy-fs.json": EMPTY_TRIVY})
     assert prepush(proj, "garbage line\n" + line(), SCANNER_DIR, ex, FakeDocker()) == 0
-    assert "không đúng định dạng" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "không đúng định dạng" in err and "KHÔNG ĐƯỢC KIỂM TRA" in err
+
+
+def test_all_lines_malformed_says_nothing_checked(proj, tmp_path, capsys):
+    ex = Exec(tmp_path)
+    assert prepush(proj, "garbage\n", SCANNER_DIR, ex, FakeDocker()) == 0
+    assert "chưa kiểm tra gì cả" in capsys.readouterr().err and ex.calls == []
+
+
+def test_broken_rules_still_blocks_on_secret(proj, tmp_path, capsys):
+    bad = tmp_path / "scn"
+    bad.mkdir()
+    (bad / "rules.yaml").write_text("- [unclosed", encoding="utf-8")
+    ex = Exec(tmp_path, overrides={"trivy-fs.json": EMPTY_TRIVY})
+    assert prepush(proj, line(), bad, ex, FakeDocker()) == 1
+    err = capsys.readouterr().err
+    assert "config.env" in err and "rules.yaml" in err and "AKIAIOSFODNN7REALKEY" not in err

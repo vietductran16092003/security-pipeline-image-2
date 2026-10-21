@@ -30,12 +30,17 @@ def _is_zero(sha: str) -> bool:
 
 def parse_ref_lines(text: str) -> list[RefUpdate]:
     ups = []
+    bad = 0
     for ln in text.splitlines():
         parts = ln.split()
         if len(parts) == 4:
             ups.append(RefUpdate(local_sha=parts[1], remote_sha=parts[3]))
         elif ln.strip():
-            print("CẢNH BÁO: bỏ qua dòng ref không đúng định dạng của hook pre-push.", file=sys.stderr)
+            bad += 1
+            print("CẢNH BÁO - KHÔNG ĐƯỢC KIỂM TRA: bỏ qua dòng ref không đúng định dạng của hook pre-push.",
+                  file=sys.stderr)
+    if bad and not ups:
+        print("CẢNH BÁO - KHÔNG ĐƯỢC KIỂM TRA: không dòng ref nào hợp lệ, chưa kiểm tra gì cả.", file=sys.stderr)
     return ups
 
 
@@ -83,17 +88,21 @@ def prepush(root: Path, stdin_text: str, scanner_dir: Path, executor: Executor, 
         return _warn(f"không kiểm tra được vì Docker không chạy ({exc}). Hãy quét lại sau.")
     except Exception as exc:  # noqa: BLE001
         return _warn(f"lỗi khi mở Docker: {exc}")
+    findings: list[Finding] = []
+    errors: list[str] = []
     try:
-        findings, errors = _scan(root, scanner_dir, executor, log_opts)
+        _scan(root, scanner_dir, executor, log_opts, findings, errors)
     except Exception as exc:  # noqa: BLE001 - lỗi của chính bộ quét không được khoá push
-        return _warn(f"bộ quét gặp lỗi ({type(exc).__name__}: {exc}).")
+        errors.append(f"bộ quét gặp lỗi ({type(exc).__name__}: {exc})")
     finally:
         if started:
             try:
                 docker.stop()
             except Exception:  # noqa: BLE001
                 pass
-    blocking = [f for f in findings if f.kind == "secret" or f.priority == "P1"]
+    # Nếu rules.yaml hỏng thì chưa có priority: coi CRITICAL là P1 để không bỏ lọt.
+    blocking = [f for f in findings
+                if f.kind == "secret" or f.priority == "P1" or (f.priority is None and f.severity == "CRITICAL")]
     if errors:
         print("CẢNH BÁO - KHÔNG ĐƯỢC KIỂM TRA, chưa kiểm tra được: " + "; ".join(errors), file=sys.stderr)
     if not blocking:
@@ -102,18 +111,19 @@ def prepush(root: Path, stdin_text: str, scanner_dir: Path, executor: Executor, 
         else:
             print("Không thấy secret/P1 ở phần đã kiểm tra. Push vẫn được tiếp tục.", file=sys.stderr)
         return 0
-    print(f"Chặn push: phát hiện {len(blocking)} vấn đề nghiêm trọng.")
+    print(f"Chặn push: phát hiện {len(blocking)} vấn đề nghiêm trọng.", file=sys.stderr)
     for f in blocking:
         label = "Secret" if f.kind == "secret" else "P1"
-        print(f"  - [{label}] {_where(f)} ({f.rule_id}) {f.title if f.kind != 'secret' else ''}".rstrip())
-    print("Hãy thu hồi/sửa rồi push lại. " + HOW_TO_BYPASS)
+        print(f"  - [{label}] {_where(f)} ({f.rule_id}) {f.title if f.kind != 'secret' else ''}".rstrip(),
+              file=sys.stderr)
+    print("Hãy thu hồi/sửa rồi push lại. " + HOW_TO_BYPASS, file=sys.stderr)
     return 1
 
 
-def _scan(root: Path, scanner_dir: Path, executor, log_opts: str):
+def _scan(root: Path, scanner_dir: Path, executor, log_opts: str,
+          findings: list[Finding], errors: list[str]) -> None:
+    """Ghi kết quả vào findings/errors được truyền vào để lỗi muộn không làm mất phần đã thu thập."""
     plan = plan_sections(detect_project(root))
-    findings: list[Finding] = []
-    errors: list[str] = []
     with tempfile.TemporaryDirectory(prefix="scan-prepush-") as tmp:
         out = Path(tmp)
         for sid in ("secrets", "deps"):
@@ -125,5 +135,7 @@ def _scan(root: Path, scanner_dir: Path, executor, log_opts: str):
                 errors.append(f"{sid} ({sec.detail})")
                 continue
             findings += sec.findings
-    apply_rules(findings, load_rules(scanner_dir / "rules.yaml"))
-    return findings, errors
+    try:
+        apply_rules(findings, load_rules(scanner_dir / "rules.yaml"))
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"rules.yaml không đọc được ({type(exc).__name__}); chỉ chặn secret và CRITICAL")
