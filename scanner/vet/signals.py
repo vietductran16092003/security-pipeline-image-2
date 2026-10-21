@@ -18,6 +18,7 @@ from . import patterns as P
 
 MAX_SIGNALS = 1000
 MAX_LINE = 10_000
+OVERLAP = 512
 MAX_NOTES = 20
 
 
@@ -64,6 +65,7 @@ class _Scan:
         self.seen: set[tuple] = set()
         self.deps: list[Dep] = []
         self.sym_notes = 0
+        self.file_lines: dict[str, list[str]] = {}
 
     def add(self, sid, level, file, line, why, key=None) -> None:
         k = (sid, file, key)
@@ -84,29 +86,71 @@ class _Scan:
 
 # ---------------------------------------------------------------- text patterns
 
+K_PIPE = ("curl", "wget", "iwr", "irm", "invoke-", "iex")
+K_DECODE = ("b64decode", "atob", "buffer.from", "fromhex", "unhexlify", "frombase64string", "\\x",
+            "codecs.decode", "fromcharcode")
+K_CRED = ("~", "$home", "${home}", "%", "expanduser", "homedir", "path.home", "userprofile", "user_home",
+          "id_rsa", "id_ed25519", "id_ecdsa", ".ssh", ".aws", "login data", "wallet", "local storage",
+          "google-chrome", "user data", "metamask", "nkbihf", "os.environ", "process.env")
+K_EXFIL = ("request", "urlopen", "http.client", "fetch", "axios", "curl", "wget", "invoke-", "iwr",
+           "webclient", "socket", "net.connect", "net::http")
+
+
+def _has(low: str, kws) -> bool:
+    return any(k in low for k in kws)
+
+
+def _logical_lines(text: str):
+    """(số dòng bắt đầu, nội dung); nối các dòng kết thúc bằng dấu gạch chéo ngược (curl ... NL | sh)."""
+    buf, start = "", 0
+    for i, raw in enumerate(text.splitlines(), 1):
+        if not buf:
+            start = i
+        if raw.endswith("\\") and len(buf) < 4 * MAX_LINE:
+            buf += raw[:-1] + " "
+            continue
+        yield start, buf + raw
+        buf = ""
+    if buf:
+        yield start, buf
+
+
+def _windows(line: str):
+    """Dòng dài được quét theo cửa sổ MAX_LINE gối nhau OVERLAP ký tự (regex tuyến tính)."""
+    if len(line) <= MAX_LINE:
+        yield line
+        return
+    step = MAX_LINE - OVERLAP
+    for s in range(0, len(line), step):
+        yield line[s:s + MAX_LINE]
+        if s + MAX_LINE >= len(line):
+            break
+
+
 def _scan_text(sc: _Scan, rel: str, name: str, ext: str, text: str) -> None:
     code = ext in P.CODE_EXTS and not (ext == "" and name.startswith("."))  # dotfile: cấu hình, không phải mã
     soft = name.lower() in P.SOFT_NAMES or ext in P.SOFT_EXTS or not code
     pipe_level = "medium" if soft else "high"
     cred = exfil = None
     last_decode = -99
-    for i, raw in enumerate(text.splitlines(), 1):
-        line = raw[:MAX_LINE]
-        if any(r.search(line) for r in P.PIPE_RES):
-            sc.add("pipe-to-shell", pipe_level, rel, i, "Tải nội dung từ mạng rồi chuyển thẳng cho shell/trình thông dịch chạy")
-        if P.PS_ENC_RE.search(line):
-            sc.add("obfuscated-exec", "high", rel, i, "PowerShell chạy lệnh mã hoá (-enc)")
-        has_decode = bool(P.DECODE_RE.search(line))
-        if has_decode:
-            last_decode = i
-        if (P.EXEC_RE.search(line) or P.IEX_RE.search(line)) and i - last_decode <= 3:
-            sc.add("obfuscated-exec", "high", rel, i, "Giải mã base64/hex rồi thực thi (eval/exec/Function/iex)")
-        if P.WEBHOOK_RE.search(line):
-            sc.add("exfil-webhook", "medium", rel, i, "Tham chiếu webhook Discord/Telegram (kênh gửi dữ liệu ra ngoài)")
-        if code and cred is None and any(r.search(line) for r in P.CRED_RES):
-            cred = i
-        if exfil is None and P.EXFIL_RE.search(line):
-            exfil = i
+    for i, full in _logical_lines(text):
+        for line in _windows(full):
+            low = line.lower()  # tiền lọc bằng chuỗi con (nhanh) trước khi chạy regex
+            if _has(low, K_PIPE) and any(r.search(line) for r in P.PIPE_RES):
+                sc.add("pipe-to-shell", pipe_level, rel, i, "Tải nội dung từ mạng rồi chuyển thẳng cho shell/trình thông dịch chạy")
+            if _has(low, ("powershell", "pwsh")) and P.PS_ENC_RE.search(line):
+                sc.add("obfuscated-exec", "high", rel, i, "PowerShell chạy lệnh mã hoá (-enc)")
+            if _has(low, K_DECODE) and P.DECODE_RE.search(line):
+                last_decode = i
+            if i - last_decode <= 8 and _has(low, ("eval", "exec", "function", "iex", "invoke-expression")) \
+                    and (P.EXEC_RE.search(line) or P.IEX_RE.search(line)):
+                sc.add("obfuscated-exec", "high", rel, i, "Giải mã base64/hex rồi thực thi (eval/exec/Function/iex)")
+            if _has(low, ("discord", "telegram", "webhook.site")) and P.WEBHOOK_RE.search(line):
+                sc.add("exfil-webhook", "medium", rel, i, "Tham chiếu webhook Discord/Telegram (kênh gửi dữ liệu ra ngoài)")
+            if code and cred is None and _has(low, K_CRED) and any(r.search(line) for r in P.CRED_RES):
+                cred = i
+            if exfil is None and _has(low, K_EXFIL) and P.EXFIL_RE.search(line):
+                exfil = i
     if cred is not None:
         if exfil is not None:
             sc.add("credential-access", "high", rel, cred,
@@ -269,6 +313,41 @@ def _check_osv(sc: _Scan, file_lines: dict[str, list[str]]) -> None:
 
 # ---------------------------------------------------------------- per-file logic
 
+_SETUP_RUN_RE = re.compile(r"os\.system|os\.popen|subprocess|(?<![.\w])(exec|eval)\s*\(")
+_SETUP_NET_RE = re.compile(
+    r"urlopen|urllib\.request|urlretrieve|requests\.(get|post)|\bcurl\b|\bwget\b|socket\.|http\.client", re.I)
+_PR_HEAD_RE = re.compile(r"github\.event\.pull_request\.head\.(sha|ref)|github\.head_ref")
+
+
+def _scan_setup_py(sc: _Scan, rel: str, text: str) -> None:
+    if "cmdclass" not in text and "setup(" not in text:
+        return
+    run = None
+    net = False
+    for i, ln in enumerate(text.splitlines(), 1):
+        ln = ln[:MAX_LINE]
+        if run is None and _SETUP_RUN_RE.search(ln):
+            run = i
+        if _SETUP_NET_RE.search(ln) or any(r.search(ln) for r in P.PIPE_RES):
+            net = True
+    if run is not None:
+        sc.add("autorun-python-build", "high" if net else "medium", rel, run,
+               "setup.py chạy lệnh/mã khi cài gói" + (" và có tải mã từ mạng" if net else ""))
+
+
+def _scan_workflow(sc: _Scan, rel: str, text: str) -> None:
+    prt = risky = None
+    for i, ln in enumerate(text.splitlines(), 1):
+        ln = ln[:MAX_LINE]
+        if prt is None and re.search(r"\bpull_request_target\b", ln):
+            prt = i
+        if risky is None and (_PR_HEAD_RE.search(ln) or any(r.search(ln) for r in P.PIPE_RES)):
+            risky = i
+    if prt is not None:
+        sc.add("autorun-workflow", "medium" if risky else "low", rel, prt,
+               "Workflow pull_request_target" + (" lấy mã của PR hoặc tải-rồi-chạy từ mạng (có đặc quyền ghi/secret)" if risky else ""))
+
+
 def _scan_special(sc: _Scan, rel: str, name: str, text: str) -> None:
     low = rel.lower()
     lines = text.splitlines()
@@ -288,6 +367,10 @@ def _scan_special(sc: _Scan, rel: str, name: str, text: str) -> None:
                 '"command"' in ln and "http" in ln.lower() for ln in lines)
             sc.add("autorun-editor-task", "high" if net else "medium", rel, text.count("\n", 0, m.start()) + 1,
                    "Tác vụ VS Code tự chạy khi mở thư mục" + (" và có tải/chạy mã từ mạng" if net else ""))
+    if name == "setup.py":
+        _scan_setup_py(sc, rel, text)
+    if low.endswith((".yml", ".yaml")) and ".github/workflows/" in "/" + low:
+        _scan_workflow(sc, rel, text)
     if name == ".devcontainer.json" or (".devcontainer/" in "/" + low and name.endswith(".json")):
         keys = "|".join(P.DEVCONTAINER_KEYS)
         for m in re.finditer(r'"(%s)"\s*:\s*(\[[^\]]{0,2000}\]|\{[^}]{0,2000}\}|"(?:[^"\\\n]|\\.){0,2000}")' % keys, text):
@@ -335,7 +418,10 @@ def _scan_file(sc: _Scan, root: Path, full: str, rel: str, max_bytes: int) -> No
         sc.note(f"Không đọc được file: {_safe(rel)}")
         return
     text = data.decode("utf-8", errors="ignore")
-    if name in ("package.json", "package-lock.json") or name == "pyproject.toml" or ext in (".txt", ".json"):
+    if "/" not in rel and ext in (".cmd", ".ps1", ".sh", ".vbs", ".js") and not re.search(r"config|rc\.", name, re.I):
+        sc.add("root-script", "low", rel, None, f"Script ({ext}) ở thư mục gốc repo")
+    if (name in ("package.json", "package-lock.json", "pyproject.toml", "setup.py") or ext in (".txt", ".json")
+            or (ext in (".yml", ".yaml") and ".github/workflows/" in "/" + rel)):
         _scan_special(sc, rel, name, text)
         sc.file_lines[rel] = text.splitlines() if name == "package-lock.json" else []
     if ext not in P.DOC_EXTS:
@@ -344,6 +430,9 @@ def _scan_file(sc: _Scan, root: Path, full: str, rel: str, max_bytes: int) -> No
 
 def _scan_git_hooks(sc: _Scan, git_dir: str, rel_git: str) -> None:
     hooks = os.path.join(git_dir, "hooks")
+    if os.path.islink(hooks):
+        sc.note(f"Thư mục hooks là symlink, không theo: {_safe(rel_git)}/hooks")
+        return
     try:
         entries = sorted(os.scandir(hooks), key=lambda e: e.name)
     except OSError:
@@ -363,16 +452,17 @@ def analyze_tree(root: Path, osv: dict | None = None, max_file_bytes: int = 2_00
                  deadline: float = 300, clock=time.monotonic) -> ScanResult:
     root = Path(root)
     sc = _Scan(osv)
-    sc.file_lines = {}  # type: ignore[attr-defined]
     start = clock()
     root_real = os.path.realpath(root)
-    sym_notes = 0
     expired = False
 
     def onerror(e):  # noqa: ANN001
         sc.note(f"Không đọc được thư mục: {_safe(getattr(e, 'filename', ''))}")
 
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False, onerror=onerror):
+        if clock() - start > deadline:
+            expired = True
+            break
         dirnames.sort()
         rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
         rel_dir = "" if rel_dir == "." else rel_dir
@@ -385,8 +475,8 @@ def analyze_tree(root: Path, osv: dict | None = None, max_file_bytes: int = 2_00
             full = os.path.join(dirpath, d)
             if os.path.islink(full):
                 if not _inside(root_real, full):
-                    sym_notes += 1
-                    if sym_notes <= MAX_NOTES:
+                    sc.sym_notes += 1
+                    if sc.sym_notes <= MAX_NOTES:
                         sc.note(f"Symlink trỏ ra ngoài repo, không theo: {_safe(rel_of(d))}")
                 continue
             if d == ".git":
@@ -401,19 +491,22 @@ def analyze_tree(root: Path, osv: dict | None = None, max_file_bytes: int = 2_00
             full = os.path.join(dirpath, f)
             if os.path.islink(full):
                 if not _inside(root_real, full):
-                    sym_notes += 1
-                    if sym_notes <= MAX_NOTES:
+                    sc.sym_notes += 1
+                    if sc.sym_notes <= MAX_NOTES:
                         sc.note(f"Symlink trỏ ra ngoài repo, không theo: {_safe(rel_of(f))}")
                 continue
             _scan_file(sc, root, full, rel_of(f), max_file_bytes)
         if expired:
             break
-    if sym_notes > MAX_NOTES:
-        sc.note(f"... và {sym_notes - MAX_NOTES} symlink khác trỏ ra ngoài repo")
+    if sc.sym_notes > MAX_NOTES:
+        sc.note(f"... và {sc.sym_notes - MAX_NOTES} symlink khác trỏ ra ngoài repo")
     if expired:
         sc.note(f"Hết thời gian phân tích (deadline {deadline:g}s), chưa quét hết repo")
+    if not expired and clock() - start > deadline:
+        sc.note(f"Hết thời gian phân tích (deadline {deadline:g}s) trước bước kiểm tra phụ thuộc/OSV")
+        return sc.res
     _check_deps(sc)
-    _check_osv(sc, sc.file_lines)  # type: ignore[attr-defined]
+    _check_osv(sc, sc.file_lines)
     return sc.res
 
 

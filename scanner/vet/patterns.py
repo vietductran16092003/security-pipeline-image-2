@@ -40,7 +40,7 @@ PIPE_RES = [
 PS_ENC_RE = re.compile(
     r"\b(powershell|pwsh)(\.exe)?\b[^\n]{0,200}?\s-(e|ec|en|enc|encodedcommand)\s+[A-Za-z0-9+/=]{16,}", I)
 DECODE_RE = re.compile(
-    r"b64decode|\batob\s*\(|base64|fromhex|unhexlify|FromBase64String"
+    r"b64decode|\batob\s*\(|Buffer\.from\([^)]{0,200}base64|fromhex|unhexlify|FromBase64String"
     r"|(\\x[0-9a-fA-F]{2}){8,}|codecs\.decode|String\.fromCharCode", I)
 EXEC_RE = re.compile(r"(?<![.\w])(eval|exec|execfile|Function)\s*\(")
 IEX_RE = re.compile(r"\b(iex|invoke-expression)\b", I)
