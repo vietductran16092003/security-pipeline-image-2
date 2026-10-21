@@ -1,4 +1,4 @@
-import itertools
+﻿import itertools
 
 import pytest
 
@@ -50,9 +50,31 @@ def test_never_safer_property():
         v = decide(res(lv, inc), fetch_error=fe, truncated=trunc, tool_errors=te)
         non_info = any(l != "info" for l in lv)
         degraded = bool(inc or trunc or te or fe)
+        assert v is not None and v in Verdict
+        if (not ('high' in lv)) and (non_info or degraded):
+            assert v == Verdict.SUSPICIOUS
         if v == Verdict.SAFER:
             assert not non_info and not degraded
         if "high" in lv:
             assert v == Verdict.NOT_SAFE
         if not non_info and not degraded:
             assert v == Verdict.SAFER
+
+
+@pytest.mark.parametrize("level", ["critical", None, "", "bogus"])
+def test_odd_levels_never_safer(level):
+    assert decide(res([level])) == Verdict.SUSPICIOUS
+
+
+@pytest.mark.parametrize("level", ["HIGH", "High", " high "])
+def test_high_case_insensitive(level):
+    assert decide(res([level])) == Verdict.NOT_SAFE
+
+
+def test_empty_string_tool_error_counts():
+    assert decide(res(), tool_errors=[""]) == Verdict.SUSPICIOUS
+
+
+def test_empty_fetch_error_string_means_no_error():
+    # fetch_error="" is falsy: treated as no error
+    assert decide(res(), fetch_error="") == Verdict.SAFER
