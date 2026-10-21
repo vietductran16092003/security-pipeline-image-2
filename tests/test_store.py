@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
@@ -57,3 +57,27 @@ def test_run_dirs_created_under_scan_store_env(tmp_path, monkeypatch):
     d = store.new_run_dir("proj", datetime(2026, 2, 3, 4, 5, 6))
     assert d == tmp_path / "proj" / "20260203-040506"
     assert d.is_dir()
+
+
+def test_same_second_runs_get_distinct_dirs_and_sort_in_order(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCAN_STORE", str(tmp_path))
+    now = datetime(2026, 1, 1, 10, 0, 0)
+    dirs = [store.new_run_dir("p", now) for _ in range(12)]
+    assert len({d.name for d in dirs}) == 12
+    for i, d in enumerate(dirs):
+        (d / "report.json").write_text(str(i))
+    assert store.latest_report("p") == dirs[-1] / "report.json"
+    assert (dirs[0] / "report.json").read_text() == "0"
+
+
+def test_stray_dirs_are_ignored_by_latest_and_prune(tmp_path, monkeypatch):
+    monkeypatch.setenv("SCAN_STORE", str(tmp_path))
+    stray = tmp_path / "p" / "zzz-notes"
+    stray.mkdir(parents=True)
+    (stray / "report.json").write_text("{}")
+    assert store.latest_report("p") is None
+    for i in range(3):
+        store.new_run_dir("p", datetime(2026, 1, 1, 0, 0, i))
+    store.prune("p", keep=1)
+    assert stray.is_dir()
+    assert len([d for d in (tmp_path / "p").iterdir() if d != stray]) == 1
