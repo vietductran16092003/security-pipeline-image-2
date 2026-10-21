@@ -110,3 +110,20 @@ def test_check_prints_manual_path_when_browser_cannot_open(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Không mở được trình duyệt, hãy mở file:" in out
     assert "email.html" in out
+
+
+def test_check_no_failure_message_when_browser_opens(tmp_path, capsys):
+    proj = _proj(tmp_path)
+    check_project(proj, SCANNER_DIR, StoreExecutor(store.slug_for(proj)), FakeDocker(), open_report=lambda p: True)
+    assert "Không mở được trình duyệt" not in capsys.readouterr().out
+
+
+def test_check_prints_manual_path_when_open_report_raises(tmp_path, capsys):
+    proj = _proj(tmp_path)
+
+    def boom(p):
+        raise OSError("no browser")
+
+    code = check_project(proj, SCANNER_DIR, StoreExecutor(store.slug_for(proj)), FakeDocker(), open_report=boom)
+    assert code == 0
+    assert "Không mở được trình duyệt, hãy mở file:" in capsys.readouterr().out
