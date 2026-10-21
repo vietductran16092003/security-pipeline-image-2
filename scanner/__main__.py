@@ -12,6 +12,7 @@ from .docker_desktop import DockerDesktop, DockerUnavailable
 from .mailer import send_email
 from .previous import fetch_previous_report
 from .local import check_project
+from .hooks import install_hook, uninstall_hook
 from .prepush import prepush
 from .reporting import build_and_write_report, load_previous
 from .runner import default_executor
@@ -98,6 +99,9 @@ def main(argv, executor=default_executor, smtp_factory=smtplib.SMTP_SSL, docker=
     pp = sub.add_parser("prepush", help="Hook pre-push: đọc danh sách ref từ stdin")
     pp.add_argument("--root", default=".")
     pp.add_argument("--scanner-dir", default=str(Path(__file__).resolve().parent.parent))
+    hk = sub.add_parser("hook", help="Cài/gỡ hook pre-push")
+    hk.add_argument("action", choices=("install", "uninstall"))
+    hk.add_argument("--root", required=True)
     send = sub.add_parser("send", help="Gửi email báo cáo")
     send.add_argument("--out", required=True)
     args = parser.parse_args(argv)
@@ -107,6 +111,16 @@ def main(argv, executor=default_executor, smtp_factory=smtplib.SMTP_SSL, docker=
         return check_project(Path(args.root), Path(args.scanner_dir), executor, docker or DockerDesktop())
     if args.cmd == "prepush":
         return prepush(Path(args.root), sys.stdin.read(), Path(args.scanner_dir), executor, docker or DockerDesktop())
+    if args.cmd == "hook":
+        root = Path(args.root).resolve()
+        if args.action == "install":
+            venv_py = Path(__file__).resolve().parent.parent / (
+                ".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
+            cmd = str(venv_py if venv_py.exists() else sys.executable)
+            print(install_hook(root, cmd))
+        else:
+            print(uninstall_hook(root))
+        return 0
     return _send(args, smtp_factory)
 
 
