@@ -89,6 +89,11 @@ def install_hook(repo: Path, scanner_cmd: str) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     orig = path.with_name(ORIG)
     if path.exists() and not _ours(path):
+        if orig.exists():  # hook gốc cũ còn đó: giữ lại thành bản sao lưu, không ghi đè
+            n = 1
+            while path.with_name(f"{ORIG}.{n}").exists():
+                n += 1
+            os.replace(orig, path.with_name(f"{ORIG}.{n}"))
         os.replace(path, orig)
     path.write_bytes(_block(scanner_cmd).encode("utf-8"))
     try:

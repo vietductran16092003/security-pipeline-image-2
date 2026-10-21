@@ -52,6 +52,22 @@ def test_install_preserves_existing_hook_as_orig(tmp_path):
     assert START.encode() in _hook(repo).read_bytes()
 
 
+def test_reinstall_over_foreign_hook_never_loses_the_previous_orig(tmp_path):
+    # Hook A đã được cài (A -> ORIG). Một công cụ khác ghi đè pre-push bằng hook B.
+    # Cài lại phải giữ B làm hook gốc mới và KHÔNG làm mất A.
+    repo = _repo(tmp_path)
+    hook_a, hook_b = b"#!/bin/sh\necho A\n", b"#!/bin/sh\necho B\n"
+    _hook(repo).write_bytes(hook_a)
+    install_hook(repo, PY)
+    _hook(repo).write_bytes(hook_b)
+    install_hook(repo, PY)
+    hooks_dir = _hook(repo).parent
+    assert (hooks_dir / ORIG).read_bytes() == hook_b
+    saved = [p.read_bytes() for p in hooks_dir.iterdir() if p.name.startswith(ORIG + ".")]
+    assert hook_a in saved
+    assert START.encode() in _hook(repo).read_bytes()
+
+
 def test_uninstall_restores_original_bytes_of_existing_hook(tmp_path):
     repo = _repo(tmp_path)
     for old in (b"#!/bin/sh\necho OLD\n", b"#!/bin/sh\r\necho OLD", b"#!/usr/bin/env python3\nprint(1)\r\n"):
