@@ -123,3 +123,5 @@ python -m scanner run --root ../du-an-cua-ban --out scan-out --scanner-dir .
 ```
 
 Kết quả nằm trong `scan-out/`: `report.json`, `email.html`, `subject.txt`, `summary.md`.
+
+Trên Windows không cần tự mở Docker Desktop: nếu Docker chưa chạy, bộ quét tự mở (chờ tối đa 3 phút) và tắt lại sau khi quét xong. Nếu Docker Desktop đã mở sẵn từ trước, bộ quét để nguyên.
