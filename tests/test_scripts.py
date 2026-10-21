@@ -27,5 +27,6 @@ def test_cmd_files_use_crlf_and_utf8_codepage():
         assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), p
         text = raw.decode("utf-8")
         assert "chcp 65001" in text, p
-    assert '"%~dp0' in (ROOT / "Quet-du-an.cmd").read_text(encoding="utf-8")
+    main = (ROOT / "Quet-du-an.cmd").read_text(encoding="utf-8")
+    assert "%~dp0" in main and '"%ROOT%' in main
     assert b"\xef\xbb\xbf" == (ROOT / "scripts" / "pick-folder.ps1").read_bytes()[:3]
