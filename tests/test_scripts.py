@@ -32,5 +32,7 @@ def test_cmd_files_use_crlf_and_utf8_codepage():
         text = raw.decode("utf-8")
         assert "chcp 65001" in text, p
     main = (ROOT / "Quet-du-an.cmd").read_text(encoding="utf-8")
-    assert "%~dp0" in main and '"%ROOT%' in main`n    assert '"%PICKED%"' in main and '%PICKED:~-1%' in main`n    assert "__PICKFAIL__" in main and "Không mở được hộp thoại" in main
+    assert "%~dp0" in main and '"%ROOT%' in main
+    assert '"%PICKED%"' in main and '%PICKED:~-1%' in main
+    assert "__PICKFAIL__" in main and "Không mở được hộp thoại" in main
     assert b"\xef\xbb\xbf" == (ROOT / "scripts" / "pick-folder.ps1").read_bytes()[:3]
