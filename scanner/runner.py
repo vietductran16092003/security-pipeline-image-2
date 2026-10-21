@@ -79,9 +79,25 @@ def _trivy_ignore(root: Path) -> list[str]:
     return ["--ignorefile", "/repo/.trivyignore"] if (root / ".trivyignore").is_file() else []
 
 
-def build_commands(section_id: str, root: Path, out: Path, scanner_dir: Path) -> list[list[str]]:
+# Chế độ local: file output phụ (lịch sử git) được gộp vào file chính, khử trùng.
+EXTRA_OUTPUTS = {"secrets": ("gitleaks-git.json",)}
+
+
+def _gitleaks(repo: str, outm: str, report: str, no_git: bool) -> list[str]:
+    return _docker(TOOL_IMAGES["gitleaks"], [repo, outm], GIT_SAFE_DIR) + [
+        "detect", "--source", "/repo", *(["--no-git"] if no_git else []), "--redact", "--report-format", "json",
+        "--report-path", report, "--exit-code", "0"]
+
+
+def build_commands(section_id: str, root: Path, out: Path, scanner_dir: Path,
+                   mode: str = "ci") -> list[list[str]]:
     root, out, scanner_dir = Path(root).resolve(), Path(out).resolve(), Path(scanner_dir).resolve()
     repo, outm = f"{root}:/repo", f"{out}:/out"
+    if section_id == "secrets" and mode == "local":
+        cmds = [_gitleaks(repo, outm, "/out/gitleaks.json", no_git=True)]
+        if (root / ".git").exists():
+            cmds.append(_gitleaks(repo, outm, "/out/gitleaks-git.json", no_git=False))
+        return cmds
     if section_id == "secrets":
         return [_docker(TOOL_IMAGES["gitleaks"], [repo, outm], GIT_SAFE_DIR) + [
             "detect", "--source", "/repo", "--redact", "--report-format", "json",
@@ -127,12 +143,16 @@ def _timeout_section(section_id: str, deadline: float) -> Section:
 
 
 def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, executor: Executor,
-                 remaining: Callable[[], float], deadline: float) -> Section:
+                 remaining: Callable[[], float], deadline: float, mode: str = "ci") -> Section:
     filename, parser, accepted = OUTPUTS[section_id]
     target = out / filename
     if target.exists():
         target.unlink()
-    for cmd in build_commands(section_id, root, out, scanner_dir):
+    extras = [out / n for n in EXTRA_OUTPUTS.get(section_id, ())] if mode == "local" else []
+    for extra in extras:
+        if extra.exists():
+            extra.unlink()
+    for cmd in build_commands(section_id, root, out, scanner_dir, mode):
         stdout_path = target if section_id == "dockerfile_policy" else None
         left = remaining()
         if left <= 0:
@@ -149,6 +169,16 @@ def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, exec
     try:
         raw = json.loads(target.read_text(encoding="utf-8"))
         findings = parser(raw)
+        for extra in extras:
+            if not extra.exists() or extra.stat().st_size == 0:
+                if (root / ".git").exists():
+                    return Section(section_id, "error", "Công cụ không tạo ra file output")
+                continue
+            seen = {(f.key(), f.line) for f in findings}
+            for f in parser(json.loads(extra.read_text(encoding="utf-8"))):
+                if (f.key(), f.line) not in seen:
+                    seen.add((f.key(), f.line))
+                    findings.append(f)
     except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
         return Section(section_id, "error", "Output JSON không hợp lệ")
     for f in findings:  # đường dẫn trong container -> đường dẫn tương đối trong dự án
@@ -158,7 +188,8 @@ def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, exec
 
 
 def run_scan(root: Path, out: Path, scanner_dir: Path, executor: Executor = default_executor,
-             deadline: float = SCAN_DEADLINE, clock: Callable[[], float] = time.monotonic) -> list[Section]:
+             deadline: float = SCAN_DEADLINE, clock: Callable[[], float] = time.monotonic,
+             mode: str = "ci") -> list[Section]:
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     plan = plan_sections(detect_project(root))
@@ -172,7 +203,7 @@ def run_scan(root: Path, out: Path, scanner_dir: Path, executor: Executor = defa
         if plan[sid] is not None:
             sections.append(Section(sid, "skipped", plan[sid]))
         else:
-            sections.append(_run_section(sid, root, out, Path(scanner_dir), executor, remaining, deadline))
+            sections.append(_run_section(sid, root, out, Path(scanner_dir), executor, remaining, deadline, mode))
     return sections
 
 

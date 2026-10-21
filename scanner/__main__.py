@@ -38,14 +38,21 @@ def _run(args, executor, docker) -> int:
             docker.stop()
 
 
+def _load_previous(path: Path):
+    try:
+        return Report.from_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def _scan(root: Path, out: Path, scanner_dir: Path, args, executor) -> int:
     env = os.environ
     repo = env.get("GITHUB_REPOSITORY", "")
     run_id = env.get("GITHUB_RUN_ID", "local")
     server = env.get("GITHUB_SERVER_URL", "https://github.com")
-    branch = env.get("GITHUB_REF_NAME", "local")
+    branch = "local" if args.mode == "local" else env.get("GITHUB_REF_NAME", "local")
 
-    sections = run_scan(root, out, scanner_dir, executor)
+    sections = run_scan(root, out, scanner_dir, executor, mode=args.mode)
     findings = [f for s in sections for f in s.findings]
     apply_rules(findings, load_rules(Path(args.rules) if args.rules else scanner_dir / "rules.yaml"))
     report = Report(
@@ -58,7 +65,10 @@ def _scan(root: Path, out: Path, scanner_dir: Path, args, executor) -> int:
         sections=sections,
         ignore_rules=count_ignore_rules(root),
     )
-    previous = fetch_previous_report(repo, branch, run_id, env.get("GITHUB_TOKEN", ""))
+    if args.previous:
+        previous = _load_previous(Path(args.previous))
+    else:
+        previous = fetch_previous_report(repo, branch, run_id, env.get("GITHUB_TOKEN", ""))
     diff = diff_reports(report, previous)
     try:
         (out / "report.json").write_text(report.to_json(), encoding="utf-8")
@@ -98,6 +108,8 @@ def main(argv, executor=default_executor, smtp_factory=smtplib.SMTP_SSL, docker=
     run.add_argument("--out", required=True)
     run.add_argument("--scanner-dir", required=True)
     run.add_argument("--rules", default=None)
+    run.add_argument("--mode", choices=("ci", "local"), default="ci")
+    run.add_argument("--previous", default=None)
     send = sub.add_parser("send", help="Gửi email báo cáo")
     send.add_argument("--out", required=True)
     args = parser.parse_args(argv)

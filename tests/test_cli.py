@@ -129,3 +129,41 @@ def test_cli_docker_unavailable_one_clear_line(tmp_path, monkeypatch, capsys):
     printed = capsys.readouterr().out
     assert code != 0 and "Không tìm thấy Docker Desktop" in printed and "$ docker" not in printed
     assert not (out / "report.json").exists()
+
+def test_run_previous_flag_skips_github_api(tmp_path, monkeypatch):
+    _clear(monkeypatch, GH_ENV)
+    import scanner.__main__ as m
+    monkeypatch.setattr(m, "fetch_previous_report", lambda *a, **k: (_ for _ in ()).throw(AssertionError("api")))
+    proj = tmp_path / "p"
+    proj.mkdir()
+    out1, out2 = tmp_path / "o1", tmp_path / "o2"
+    out1.mkdir(); out2.mkdir()
+    base = ["run", "--root", str(proj), "--scanner-dir", SCANNER_DIR, "--mode", "local"]
+    monkeypatch.undo()
+    _clear(monkeypatch, GH_ENV)
+    monkeypatch.setattr(m, "fetch_previous_report", lambda *a, **k: None)
+    assert main(base + ["--out", str(out1)], executor=FakeExecutor(out1), docker=FakeDocker()) == 0
+    monkeypatch.setattr(m, "fetch_previous_report", lambda *a, **k: (_ for _ in ()).throw(AssertionError("api")))
+    assert main(base + ["--out", str(out2), "--previous", str(out1 / "report.json")],
+                executor=FakeExecutor(out2), docker=FakeDocker()) == 0
+    assert "Lần quét đầu tiên" not in (out2 / "subject.txt").read_text(encoding="utf-8")
+    rep = json.loads((out2 / "report.json").read_text(encoding="utf-8"))
+    assert rep["branch"] == "local"
+
+
+@pytest.mark.parametrize("content", [None, "not json"])
+def test_run_previous_missing_or_corrupt_is_ignored(tmp_path, monkeypatch, content):
+    _clear(monkeypatch, GH_ENV)
+    import scanner.__main__ as m
+    monkeypatch.setattr(m, "fetch_previous_report", lambda *a, **k: (_ for _ in ()).throw(AssertionError("api")))
+    proj = tmp_path / "p"
+    proj.mkdir()
+    out = tmp_path / "o"
+    out.mkdir()
+    prev = tmp_path / "prev.json"
+    if content is not None:
+        prev.write_text(content, encoding="utf-8")
+    code = main(["run", "--root", str(proj), "--out", str(out), "--scanner-dir", SCANNER_DIR,
+                 "--previous", str(prev)], executor=FakeExecutor(out), docker=FakeDocker())
+    assert code == 0
+    assert "Lần quét đầu tiên" in (out / "subject.txt").read_text(encoding="utf-8")

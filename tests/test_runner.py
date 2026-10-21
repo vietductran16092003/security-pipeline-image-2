@@ -204,3 +204,49 @@ def test_count_ignore_rules(tmp_path):
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "b.py").write_text("# nosemgrep\n")
     assert count_ignore_rules(tmp_path) == 4
+
+
+# ---- chế độ local ----
+
+def _gl(*items):
+    import json
+    return json.dumps([{"RuleID": r, "Description": r, "File": f, "StartLine": ln} for r, f, ln in items])
+
+
+def test_build_commands_ci_secrets_unchanged(proj, out):
+    def norm(cmds):  # tên container là ngẫu nhiên
+        return [[a for a in c if not a.startswith("scanner-")] for c in cmds]
+    cmds = build_commands("secrets", proj, out, SCANNER_DIR, mode="ci")
+    assert norm(build_commands("secrets", proj, out, SCANNER_DIR)) == norm(cmds)
+    assert len(cmds) == 1 and "--no-git" not in cmds[0]
+
+
+def test_local_secrets_scans_working_tree(proj, out):
+    cmds = build_commands("secrets", proj, out, SCANNER_DIR, mode="local")
+    assert "--no-git" in cmds[0] and "/out/gitleaks.json" in cmds[0]
+
+
+def test_local_secrets_adds_git_history_when_git_repo(proj, out):
+    assert len(build_commands("secrets", proj, out, SCANNER_DIR, mode="local")) == 1
+    (proj / ".git").mkdir()
+    cmds = build_commands("secrets", proj, out, SCANNER_DIR, mode="local")
+    assert len(cmds) == 2
+    assert "--no-git" not in cmds[1] and "/out/gitleaks-git.json" in cmds[1]
+
+
+def test_local_merges_both_gitleaks_outputs_without_duplicates(proj, out):
+    (proj / ".git").mkdir()
+    ex = FakeExecutor(out, overrides={
+        "gitleaks.json": _gl(("aws-key", "a.py", 3), ("tok", "b.py", 1)),
+        "gitleaks-git.json": _gl(("aws-key", "a.py", 3), ("old", "c.py", 9)),
+    })
+    s = section(run_scan(proj, out, SCANNER_DIR, ex, mode="local"), "secrets")
+    got = sorted((f.rule_id, f.file, f.line) for f in s.findings)
+    assert got == [("aws-key", "a.py", 3), ("old", "c.py", 9), ("tok", "b.py", 1)]
+
+
+def test_local_git_scan_failure_is_error(proj, out):
+    (proj / ".git").mkdir()
+    ex = FakeExecutor(out, exit_codes={"gitleaks-git.json": 2}, overrides={"gitleaks.json": "[]"})
+    s = section(run_scan(proj, out, SCANNER_DIR, ex, mode="local"), "secrets")
+    assert s.status == "error"
