@@ -9,11 +9,23 @@
   reason: "Secret bị lộ trong mã nguồn hoặc lịch sử git"
   recommendation: "Thu hồi (rotate) secret ngay, xoá khỏi mã nguồn, chuyển sang biến môi trường hoặc secret manager"
 
-- name: critical
-  when: "severity == 'CRITICAL'"
+- name: critical_vuln
+  when: "severity == 'CRITICAL' and kind == 'vuln'"
   priority: "P1"
   reason: "Mức độ nghiêm trọng CRITICAL"
   recommendation: "Cập nhật lên phiên bản đã vá hoặc gỡ thành phần này ngay"
+
+- name: critical_code
+  when: "severity == 'CRITICAL' and kind == 'code'"
+  priority: "P1"
+  reason: "Mức độ nghiêm trọng CRITICAL"
+  recommendation: "Sửa đoạn mã ngay theo gợi ý của công cụ (dùng hàm hoặc tham số an toàn hơn)"
+
+- name: critical_other
+  when: "severity == 'CRITICAL'"
+  priority: "P1"
+  reason: "Mức độ nghiêm trọng CRITICAL"
+  recommendation: "Sửa cấu hình ngay theo gợi ý của công cụ"
 
 - name: eol_medium_backlog
   when: "base_os_eol and severity == 'MEDIUM'"
@@ -21,11 +33,23 @@
   reason: "Base OS đã hết hỗ trợ (EOL), không phải lỗi mới phát sinh"
   recommendation: "Ưu tiên đổi sang base image còn được hỗ trợ thay vì vá từng CVE lẻ"
 
-- name: high_fixable
-  when: "severity == 'HIGH' and kind in ('vuln', 'config', 'code') and (kind != 'vuln' or fixed_version)"
+- name: high_fixable_vuln
+  when: "severity == 'HIGH' and kind == 'vuln' and fixed_version"
+  priority: "P1"
+  reason: "Mức độ HIGH và đã có bản vá"
+  recommendation: "Nâng lên phiên bản đã vá"
+
+- name: high_code
+  when: "severity == 'HIGH' and kind == 'code'"
   priority: "P1"
   reason: "Mức độ HIGH và đã có cách khắc phục"
-  recommendation: "Nâng lên phiên bản đã vá hoặc sửa cấu hình/mã theo gợi ý của công cụ"
+  recommendation: "Sửa đoạn mã theo gợi ý của công cụ (dùng hàm hoặc tham số an toàn hơn)"
+
+- name: high_config
+  when: "severity == 'HIGH' and kind == 'config'"
+  priority: "P1"
+  reason: "Mức độ HIGH và đã có cách khắc phục"
+  recommendation: "Sửa cấu hình theo gợi ý của công cụ"
 
 - name: high_nofix
   when: "severity == 'HIGH' and kind == 'vuln'"

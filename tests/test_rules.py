@@ -27,6 +27,20 @@ def test_real_rules(f, expected):
     assert f.priority == expected and f.reason and f.recommendation
 
 
+@pytest.mark.parametrize("f,mentions_version", [
+    (Finding("trivy", "vuln", "C", "CRITICAL", "t", fixed_version="1.2"), True),
+    (Finding("trivy", "vuln", "C", "HIGH", "t", fixed_version="1.2"), True),
+    (Finding("semgrep", "code", "r", "HIGH", "t"), False),
+    (Finding("semgrep", "code", "r", "CRITICAL", "t"), False),
+    (Finding("trivy", "config", "KSV017", "HIGH", "t"), False),
+    (Finding("trivy", "config", "KSV017", "CRITICAL", "t"), False),
+])
+def test_recommendation_fits_kind(f, mentions_version):
+    """Lỗi code/cấu hình không được khuyên 'nâng phiên bản' như lỗi thư viện."""
+    apply_rules([f], load_rules(RULES))
+    assert ("phiên bản" in f.recommendation) == mentions_version
+
+
 def _rule(when="True", priority="P1"):
     return {"name": "x", "when": when, "priority": priority, "reason": "r", "recommendation": "r"}
 

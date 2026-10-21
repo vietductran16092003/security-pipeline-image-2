@@ -80,7 +80,7 @@ def _section_rows(report: Report) -> list[dict]:
         if status == "clean":
             icon, color, text = "✔", "#047857", "Sạch"
         elif status == "findings":
-            icon, color, text = "✖", "#dc2626", f"{len(s.findings)} finding"
+            icon, color, text = "✖", "#dc2626", f"{len(s.findings)} lỗi"
         elif status == "skipped":
             icon, color, text = "–", "#64748b", "Không quét"
         else:
@@ -207,10 +207,10 @@ def render_summary(report: Report, diff: Diff) -> str:
         lines += ["", f"Đang áp dụng {report.ignore_rules} quy tắc bỏ qua từ file ignore của dự án."]
     ordered = top_findings(report, len(report.all_findings()))
     if ordered:
-        lines += ["", "### Finding", "", "| Mức | Mã | Vị trí | Bản vá | Khuyến nghị |", "|---|---|---|---|---|"]
+        lines += ["", "### Danh sách lỗi", "", "| Mức | Mã | Vị trí | Bản vá | Khuyến nghị |", "|---|---|---|---|---|"]
         for f in ordered[:SUMMARY_LIMIT]:
             fix = (f.fixed_version or "chưa có bản vá") if f.kind == "vuln" else ""
             lines.append(f"| {f.priority} | {_md(f.rule_id)} | {_md(_location(f))} | {_md(fix)} | {_md(f.recommendation)} |")
         if len(ordered) > SUMMARY_LIMIT:
-            lines += ["", f"… và {len(ordered) - SUMMARY_LIMIT} finding khác, xem `report.json` trong artifact `security-report`."]
+            lines += ["", f"… và {len(ordered) - SUMMARY_LIMIT} lỗi khác, xem `report.json` trong artifact `security-report`."]
     return "\n".join(lines) + "\n"

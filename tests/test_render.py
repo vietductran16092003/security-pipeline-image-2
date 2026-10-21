@@ -167,9 +167,21 @@ def test_local_footer_without_findings():
     assert "đủ 0 lỗi" not in render_email(r, first())
 
 
+def test_section_counts_in_vietnamese():
+    html = render_email(rep_with(vuln("CVE-1", "P1")), first())
+    assert "1 lỗi" in html and "finding" not in html
+
+
+def test_long_project_name_keeps_gap_in_header():
+    """Tên dự án dài không được dính sát chữ SECURITY PIPELINE trên điện thoại."""
+    html = render_email(rep_with(), first())
+    header = html.split("SECURITY PIPELINE", 1)[1].split("</tr>", 1)[0]
+    assert "padding-left:12px" in header and "display:inline-block" in header
+
+
 def test_summary_truncates():
     md = render_summary(rep_many(500), first())
-    assert "300 finding khác" in md and md.count("| CVE-2024-") == 200
+    assert "300 lỗi khác" in md and "finding" not in md and md.count("| CVE-2024-") == 200
 
 
 def test_summary_lists_sections():
