@@ -1,4 +1,8 @@
-﻿"""Cổng kiểm tra nguồn repo: chỉ chấp nhận danh sách trắng nghiêm ngặt.
+"""Cổng kiểm tra nguồn repo: chỉ chấp nhận danh sách trắng nghiêm ngặt.
+
+LƯU Ý: kiểm tra DNS ở đây chỉ mang tính THAM KHẢO (advisory): `git clone` sẽ phân
+giải lại tên miền (DNS rebinding/TOCTOU). Biện pháp thật là chặn mạng tới dải
+riêng ở tầng sandbox (Task 10). Host IDN phải được nhập dạng punycode (xn--).
 
 Kết quả (`Source.clone_url`) sẽ được đưa cho `git clone` trong container, nên
 không bao giờ ghép chuỗi người dùng nhập vào shell; mọi thành phần đều được
@@ -33,6 +37,9 @@ _BRANCH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._/-]{0,199}")
 _LABEL = re.compile(r"(?!-)[a-z0-9-]{1,63}(?<!-)")
 _TLD = re.compile(r"[a-z]{2,63}|xn--[a-z0-9-]{1,59}")
 _MAX_SEGMENTS = 10
+_V6_OK = [ipaddress.ip_network("2000::/3")]
+_V6_BAD = [ipaddress.ip_network(n) for n in (
+    "2002::/16", "64:ff9b::/96", "64:ff9b:1::/48", "2001::/32", "2001:db8::/32")]
 
 
 def _default_resolver(host: str) -> list[str]:
@@ -63,6 +70,7 @@ def _check_host(host: str) -> None:
 
 
 def _check_resolution(host: str, resolver: Callable[[str], list[str]]) -> None:
+    # Advisory only (xem docstring): git clone sẽ phân giải lại.
     try:
         addrs = list(resolver(host))
     except Exception:
@@ -74,8 +82,11 @@ def _check_resolution(host: str, resolver: Callable[[str], list[str]]) -> None:
             ip = ipaddress.ip_address(str(raw).split("%", 1)[0])
         except ValueError:
             raise _bad(f"Máy chủ {host} trả về địa chỉ không hợp lệ.") from None
-        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-            ip = ip.ipv4_mapped
+        if isinstance(ip, ipaddress.IPv6Address):
+            if ip.ipv4_mapped:
+                ip = ip.ipv4_mapped
+            elif not any(ip in n for n in _V6_OK) or any(ip in n for n in _V6_BAD):
+                raise _bad(f"Máy chủ {host} trỏ về địa chỉ IPv6 không được phép.")
         if not ip.is_global or ip.is_multicast:
             raise _bad(f"Máy chủ {host} trỏ về địa chỉ nội bộ, không được phép.")
 
@@ -118,10 +129,11 @@ def parse_source(text: str, resolver: Callable[[str], list[str]] | None = None) 
     branch_val: str | None = None
     if sep:
         if not _BRANCH.fullmatch(branch) or ".." in branch or "//" in branch \
-                or branch.endswith(("/", ".", ".lock")) or "@" in branch:
+                or branch.endswith(("/", ".", ".lock")) or "@" in branch \
+                or "/." in branch or "/-" in branch:
             raise _bad("Tên nhánh không hợp lệ.")
         branch_val = branch
-    path_part = path_part.rstrip("/") if path_part.endswith("/") and not sep else path_part
+    path_part = path_part.removesuffix("/")
     if path_part.endswith(".git"):
         path_part = path_part[:-4]
     segs = path_part.split("/")

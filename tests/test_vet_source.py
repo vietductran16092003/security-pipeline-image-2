@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 
 from scanner.vet.source import InvalidSource, Source, parse_source
 
@@ -40,7 +40,7 @@ def test_valid(text, host, path, branch, clone):
     "o/../r", "https://github.com/o/../r", "https://github.com/../r", "o/./r",
     "o/r s", "o /r", "https://github.com/o/r\n", "o/r\x00", "o/r\x1b[0m", "o/r\t",
     "o/r@a;b", "o/r@$(id)", "o/r@`id`", "o/r@a b", "o/r@a|b", "o/r@a&b",
-    "o/r@-x", "o/r@--upload-pack=x", "o/r@", "o/r@a..b", "o/r@a@b", "o/r@x.lock", "o/r@a//b",
+    "o/r@-x", "o/r@--upload-pack=x", "o/r@", "o/r@a..b", "o/r@a@b", "o/r@x.lock", "o/r@a/.b", "o/r@a/-b", "o/r@a//b",
     "--upload-pack=touch/x", "-o/r", "o/-r--x", "-c/core.sshCommand=x",
     "o/r?x=1", "o/r#frag", "https://github.com/o/r?x=1", "https://github.com/o/r#f",
     "o\\r", "https://github.com\\@evil.example/o/r", "o/r%2e", "o/r;id", "o/$(id)",
@@ -58,7 +58,7 @@ def test_rejected(text):
 
 def test_hostname_resolving_to_private_ip_rejected():
     for ip in ["10.0.0.1", "127.0.0.1", "169.254.169.254", "192.168.0.9", "::1", "fe80::1",
-               "::ffff:10.0.0.1", "fd00::1", "100.64.0.1", "0.0.0.0"]:
+               "::ffff:10.0.0.1", "fd00::1", "64:ff9b::a00:1", "64:ff9b:1::a00:1", "::a00:1", "fec0::1", "2002:a00:1::1", "2001::1", "100.64.0.1", "0.0.0.0"]:
         with pytest.raises(InvalidSource):
             parse_source("https://git.evil.example/g/p", resolver=lambda h, ip=ip: [ip])
 
@@ -88,3 +88,8 @@ def test_default_resolver_uses_getaddrinfo(monkeypatch):
                         lambda *a, **k: [(2, 1, 6, "", ("10.1.1.1", 0))])
     with pytest.raises(InvalidSource):
         parse_source("https://git.evil.example/g/p")
+
+
+def test_legit_global_ipv6_accepted():
+    s = parse_source("https://git.example.org/g/p", resolver=lambda h: ["2606:4700::1111"])
+    assert s.host == "git.example.org"
