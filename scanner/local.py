@@ -13,7 +13,7 @@ from .reporting import build_and_write_report, load_previous
 
 
 def check_project(root: Path, scanner_dir: Path, executor, docker,
-                  open_report: Callable[[Path], None] = webbrowser.open) -> int:
+                  open_report: Callable[[Path], object] = webbrowser.open) -> int:
     """0 = quét xong (bất kể có lỗi); 2 = không quét được."""
     root = Path(root).resolve()
     if not root.is_dir():
@@ -42,8 +42,11 @@ def check_project(root: Path, scanner_dir: Path, executor, docker,
     c = report.counts()
     print(f"Xong: điểm {compute_grade(report)} · P1={c['P1']} P2={c['P2']} Backlog={c['Backlog']}")
     print(f"Báo cáo: {out / 'email.html'}")
+    report_file = out / "email.html"
     try:
-        open_report(out / "email.html")
-    except Exception as exc:  # noqa: BLE001 - không mở được trình duyệt không làm hỏng kết quả quét
-        print(f"Không mở được trình duyệt: {exc}")
+        opened = open_report(report_file)
+    except Exception:  # noqa: BLE001 - không mở được trình duyệt không làm hỏng kết quả quét
+        opened = False
+    if not opened:
+        print(f"Không mở được trình duyệt, hãy mở file: {report_file}")
     return 0

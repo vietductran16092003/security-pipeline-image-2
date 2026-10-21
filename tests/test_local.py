@@ -101,3 +101,12 @@ def test_cli_check_subcommand(tmp_path):
     code = main(["check", "--root", str(proj), "--scanner-dir", str(SCANNER_DIR)],
                 executor=StoreExecutor(store.slug_for(proj)), docker=FakeDocker())
     assert code == 0
+
+
+def test_check_prints_manual_path_when_browser_cannot_open(tmp_path, capsys):
+    proj = _proj(tmp_path)
+    slug = store.slug_for(proj)
+    check_project(proj, SCANNER_DIR, StoreExecutor(slug), FakeDocker(), open_report=lambda p: False)
+    out = capsys.readouterr().out
+    assert "Không mở được trình duyệt, hãy mở file:" in out
+    assert "email.html" in out
