@@ -1,4 +1,4 @@
-"""Cài/gỡ hook pre-push của bộ quét mà không ghi đè hook sẵn có."""
+﻿"""Cài/gỡ hook pre-push của bộ quét mà không ghi đè hook sẵn có."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess | None:
 
 def _hooks_file(repo: Path) -> tuple[Path | None, str]:
     """Trả (đường dẫn pre-push, '') hoặc (None, thông báo lỗi tiếng Việt)."""
-    top = _git(repo, "rev-parse", "--git-dir")
+    top = _git(repo, "rev-parse", "--git-path", "hooks/pre-push")
     if top is None:
         return None, "Không chạy được git. Hãy cài Git rồi thử lại."
     if top.returncode != 0:
@@ -32,10 +32,10 @@ def _hooks_file(repo: Path) -> tuple[Path | None, str]:
     if hp is not None and hp.stdout.strip():
         return None, ("Dự án này dùng core.hooksPath (ví dụ husky) nên chưa hỗ trợ cài hook tự động. "
                       "Bạn có thể thêm lệnh quét vào hook của công cụ đó.")
-    git_dir = Path(top.stdout.strip())
-    if not git_dir.is_absolute():
-        git_dir = Path(repo) / git_dir
-    return git_dir / "hooks" / "pre-push", ""
+    hook = Path(top.stdout.strip())
+    if not hook.is_absolute():
+        hook = Path(repo) / hook
+    return hook, ""
 
 
 def _sh_quote(value: str) -> str:
@@ -45,23 +45,22 @@ def _sh_quote(value: str) -> str:
     return f'"{value}"'
 
 
-def _block(scanner_cmd: str, nl: str) -> str:
+def _block(scanner_cmd: str) -> str:
+    # Khối nằm ngay sau dòng shebang, mọi dòng chỉ dùng LF. stdin được lưu một lần để hook cũ
+    # đọc cùng danh sách ref; bẫy EXIT chạy bộ quét sau khi hook cũ kết thúc (kể cả `exit 0`).
+    # Hook cũ dùng `exec` để thay tiến trình thì vẫn thoát được khối này.
     py = _sh_quote(scanner_cmd)
     lines = [
         START,
-        '_ss_prev=$?',
-        'if [ "$_ss_prev" -ne 0 ]; then exit "$_ss_prev"; fi',
-        f'if [ ! -x {py} ]; then',
-        '  echo "security-scan: không tìm thấy bộ quét, bỏ qua kiểm tra." >&2',
-        '  exit 0',
-        'fi',
-        '_ss_root="$(git rev-parse --show-toplevel)"',
-        f'PYTHONPATH={_sh_quote(str(SCANNER_DIR))} {py} -m scanner prepush --root "$_ss_root"',
-        'exit $?',
+        '_ss_in="$(mktemp)"; cat >"$_ss_in"; exec <"$_ss_in"',
+        "trap '_ss_st=$?; trap - EXIT; "
+        'if [ "$_ss_st" -eq 0 ]; then _ss_root="$(git rev-parse --show-toplevel)"; '
+        f'if [ -x {py} ]; then PYTHONPATH={_sh_quote(str(SCANNER_DIR))} {py} -m scanner prepush --root "$_ss_root" <"$_ss_in"; _ss_st=$?; '
+        'else echo "security-scan: KHÔNG tìm thấy bộ quét, bỏ qua kiểm tra (hãy cài lại hook)." >&2; fi; fi; '
+        'rm -f "$_ss_in"; exit "$_ss_st"\' EXIT',
         END,
     ]
-    return nl.join(lines) + nl
-
+    return "\n".join(lines) + "\n"
 
 def _strip(data: bytes) -> tuple[bytes, bool]:
     """Cắt khối của ta, trả (nội dung còn lại, có khối hay không)."""
@@ -91,31 +90,27 @@ def install_hook(repo: Path, scanner_cmd: str) -> str:
     path, err = _hooks_file(Path(repo))
     if path is None:
         return err
-    nl = "\n"
-    added_nl = False
     if path.exists():
-        old, found = _strip(path.read_bytes())
-        if "\r\n" in old.decode("utf-8", errors="surrogateescape"):
-            nl = "\r\n"
-        body = old
-        if found:
-            pass
-        if body and not body.endswith(b"\n"):
-            added_nl = True
-            body += nl.encode()
+        old, _ = _strip(path.read_bytes())
     else:
-        body = f"#!/bin/sh{nl}".encode()
-    block = _block(scanner_cmd, nl)
-    if added_nl:
-        block = block.replace(START + nl, START + nl + NL_FLAG + nl, 1)
+        old = b"#!/bin/sh\n"
+    block = _block(scanner_cmd)
+    if old.startswith(b"#!"):
+        nl = old.find(b"\n")
+        if nl < 0:
+            old += b"\n"
+            block = block.replace(START + "\n", START + "\n" + NL_FLAG + "\n", 1)
+            nl = len(old) - 1
+        head, rest = old[: nl + 1], old[nl + 1:]
+    else:
+        head, rest = b"", old
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(body + block.encode("utf-8"))
+    path.write_bytes(head + block.encode("utf-8") + rest)
     try:
         path.chmod(0o755)
     except OSError:
         pass
     return f"Đã cài hook kiểm tra trước khi push cho: {Path(repo)}"
-
 
 def uninstall_hook(repo: Path) -> str:
     path, err = _hooks_file(Path(repo))

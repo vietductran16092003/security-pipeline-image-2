@@ -48,8 +48,8 @@ def test_install_preserves_existing_hook_and_runs_it_first(tmp_path):
     _hook(repo).write_bytes(old)
     install_hook(repo, PY)
     data = _hook(repo).read_bytes()
-    assert data.startswith(old)
-    assert data.index(b"echo OLD") < data.index(START.encode())
+    assert data.startswith(b"#!/bin/sh\n" + START.encode())
+    assert data.endswith(b"echo OLD\n")
 
 
 def test_existing_hook_without_trailing_newline_and_with_crlf(tmp_path):
@@ -58,8 +58,8 @@ def test_existing_hook_without_trailing_newline_and_with_crlf(tmp_path):
     _hook(repo).write_bytes(old)
     install_hook(repo, PY)
     data = _hook(repo).read_bytes()
-    assert data.startswith(old + b"\r\n" + START.encode())
-    assert b"\n" not in data.replace(b"\r\n", b"")
+    assert data.startswith(b"#!/bin/sh\r\n" + START.encode())
+    assert data.endswith(b"echo OLD")
     uninstall_hook(repo)
     assert _hook(repo).read_bytes() == old
 
@@ -110,3 +110,59 @@ def test_hook_is_valid_sh_and_allows_when_scanner_missing(tmp_path):
     install_hook(repo, str(tmp_path / "x"))
     r = subprocess.run([sh, str(_hook(repo))], input="", capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=repo)
     assert r.returncode == 3
+
+
+def _find_sh():
+    sh = shutil.which("sh")
+    if sh is None:
+        cand = Path(shutil.which("git")).parent.parent / "bin" / "sh.exe"
+        if cand.exists():
+            sh = str(cand)
+    if sh is None:
+        pytest.skip("cần sh")
+    return sh
+
+
+def _fake_scanner(tmp_path):
+    rec = tmp_path / "rec.txt"
+    fake = tmp_path / "py"
+    fake.write_bytes(b'#!/bin/sh\necho RAN >> "' + str(rec).replace("\\", "/").encode() + b'"\ncat >> "'
+                     + str(rec).replace("\\", "/").encode() + b'"\nexit ${FAKE_RC:-0}\n')
+    fake.chmod(0o755)
+    return fake, rec
+
+
+@pytest.mark.parametrize("old,rc,ran", [
+    (b"#!/bin/sh\nexit 0\n", 0, True),
+    (b"#!/bin/sh\ncat >/dev/null\n", 0, True),
+    (b"#!/bin/sh\nexit 3\n", 3, False),
+])
+def test_combined_script_runs_scanner_after_old_hook(tmp_path, old, rc, ran):
+    sh = _find_sh()
+    repo = _repo(tmp_path / "r") if (tmp_path / "r").mkdir() is None else None
+    fake, rec = _fake_scanner(tmp_path)
+    _hook(repo).write_bytes(old)
+    install_hook(repo, str(fake))
+    kw = dict(capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=repo)
+    r = subprocess.run([sh, str(_hook(repo))], input="refs/heads/a 1 refs/heads/a 0\n", **kw)
+    assert r.returncode == rc
+    if ran:
+        assert "refs/heads/a 1 refs/heads/a 0" in rec.read_text()
+    else:
+        assert not rec.exists()
+    r = subprocess.run([sh, str(_hook(repo))], input="x\n", env={**os.environ, "FAKE_RC": "1"}, **kw)
+    assert r.returncode == (1 if ran else 3)
+
+
+def test_worktree_gets_hook_where_git_reads_it(tmp_path):
+    main = tmp_path / "main"
+    main.mkdir()
+    _repo(main)
+    env = ["-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run(["git", "-C", str(main), *env, "commit", "-q", "--allow-empty", "-m", "x"], check=True)
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(main), "worktree", "add", "-q", str(wt), "-b", "w"], check=True)
+    install_hook(wt, PY)
+    assert _hook(main).exists()
+    uninstall_hook(wt)
+    assert not _hook(main).exists()
