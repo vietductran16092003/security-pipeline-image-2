@@ -179,7 +179,7 @@ def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, exec
                 if (f.key(), f.line) not in seen:
                     seen.add((f.key(), f.line))
                     findings.append(f)
-    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError, AttributeError, TypeError):
         return Section(section_id, "error", "Output JSON không hợp lệ")
     for f in findings:  # đường dẫn trong container -> đường dẫn tương đối trong dự án
         if f.file and f.file.startswith("/repo/"):

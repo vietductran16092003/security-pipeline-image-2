@@ -250,3 +250,18 @@ def test_local_git_scan_failure_is_error(proj, out):
     ex = FakeExecutor(out, exit_codes={"gitleaks-git.json": 2}, overrides={"gitleaks.json": "[]"})
     s = section(run_scan(proj, out, SCANNER_DIR, ex, mode="local"), "secrets")
     assert s.status == "error"
+
+
+def test_local_unreadable_extra_output_is_error(proj, out):
+    (proj / ".git").mkdir()
+
+    class DirExtra(FakeExecutor):
+        def __call__(self, cmd, stdout_path=None, timeout=None):
+            if any(a == "/out/gitleaks-git.json" for a in cmd):
+                (self.out / "gitleaks-git.json").mkdir()  # đọc file sẽ ném OSError
+                return 0
+            return super().__call__(cmd, stdout_path, timeout)
+
+    ex = DirExtra(out, overrides={"gitleaks.json": "[]"})
+    s = section(run_scan(proj, out, SCANNER_DIR, ex, mode="local"), "secrets")
+    assert s.status == "error"
