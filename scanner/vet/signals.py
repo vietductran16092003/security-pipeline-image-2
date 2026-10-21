@@ -3,6 +3,9 @@
 Chạy TRONG container `--network none`, repo mount chỉ đọc. Nguyên tắc: không chạy/import
 code của repo, không theo symlink, đọc bytes (errors="ignore"), giới hạn kích thước file
 và tổng thời gian, và KHÔNG BAO GIỜ đưa nội dung khớp vào kết quả (chỉ tên mẫu + file + dòng).
+
+Mức tín hiệu: high | medium | low | info. `info` chỉ để liệt kê trong báo cáo, KHÔNG đổi kết luận
+(decide() bỏ qua).
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ MAX_NOTES = 20
 @dataclass
 class Signal:
     id: str
-    level: str  # "high" | "medium" | "low"
+    level: str  # "high" | "medium" | "low" | "info" (info: chỉ liệt kê, không ảnh hưởng mức kết luận)
     file: str
     line: int | None
     why: str
@@ -418,8 +421,8 @@ def _scan_file(sc: _Scan, root: Path, full: str, rel: str, max_bytes: int) -> No
         sc.note(f"Không đọc được file: {_safe(rel)}")
         return
     text = data.decode("utf-8", errors="ignore")
-    if "/" not in rel and ext in (".cmd", ".ps1", ".sh", ".vbs", ".js") and not re.search(r"config|rc\.", name, re.I):
-        sc.add("root-script", "low", rel, None, f"Script ({ext}) ở thư mục gốc repo")
+    if "/" not in rel and ext in (".cmd", ".ps1", ".sh", ".vbs", ".wsf"):
+        sc.add("root-script", "info", rel, None, f"Script ({ext}) ở thư mục gốc repo")
     if (name in ("package.json", "package-lock.json", "pyproject.toml", "setup.py") or ext in (".txt", ".json")
             or (ext in (".yml", ".yaml") and ".github/workflows/" in "/" + rel)):
         _scan_special(sc, rel, name, text)

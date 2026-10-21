@@ -285,17 +285,24 @@ def test_autorun_workflow(npm, tmp_path):
     check(analyze_tree(tmp_path), "autorun-workflow", "low", ".github/workflows/x.yaml", 2)
 
 
-def test_root_script_low_and_not_double_reported(tmp_path):
-    (tmp_path / "go.cmd").write_text("echo hi\n")
+def test_root_script_is_info_only_and_not_double_reported(tmp_path):
+    (tmp_path / "build.sh").write_text("echo hi\n")
     (tmp_path / "run.bat").write_text("echo hi\n")
     (tmp_path / "webpack.config.js").write_text("module.exports = {}\n")
+    (tmp_path / "tool.js").write_text("console.log(1)\n")
     sub = tmp_path / "sub"
     sub.mkdir()
     (sub / "x.sh").write_text("echo hi\n")
     res = analyze_tree(tmp_path)
-    check(res, "root-script", "low", "go.cmd", None)
-    assert [s.file for s in res.signals if s.id == "root-script"] == ["go.cmd"]
+    check(res, "root-script", "info", "build.sh", None)
+    assert [s.file for s in res.signals if s.id == "root-script"] == ["build.sh"]
     assert [s.id for s in res.signals if s.file == "run.bat"] == ["executable-binary"]
+    assert not [s for s in res.signals if s.file.endswith(".js")]
+
+
+def test_normal_repo_with_root_build_sh_only_info(tmp_path):
+    (tmp_path / "build.sh").write_text("make all\n")
+    assert {s.level for s in analyze_tree(tmp_path).signals} == {"info"}
 
 
 @pytest.mark.parametrize("ok_calls", [1, 2])
