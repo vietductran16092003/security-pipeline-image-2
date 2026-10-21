@@ -90,7 +90,7 @@ def _gitleaks(repo: str, outm: str, report: str, no_git: bool) -> list[str]:
 
 
 def build_commands(section_id: str, root: Path, out: Path, scanner_dir: Path,
-                   mode: str = "ci") -> list[list[str]]:
+                   mode: str = "ci", log_opts: Optional[str] = None) -> list[list[str]]:
     root, out, scanner_dir = Path(root).resolve(), Path(out).resolve(), Path(scanner_dir).resolve()
     repo, outm = f"{root}:/repo", f"{out}:/out"
     if section_id == "secrets" and mode == "local":
@@ -100,8 +100,8 @@ def build_commands(section_id: str, root: Path, out: Path, scanner_dir: Path,
         return cmds
     if section_id == "secrets":
         return [_docker(TOOL_IMAGES["gitleaks"], [repo, outm], GIT_SAFE_DIR) + [
-            "detect", "--source", "/repo", "--redact", "--report-format", "json",
-            "--report-path", "/out/gitleaks.json", "--exit-code", "0"]]
+            "detect", "--source", "/repo", *([f"--log-opts={log_opts}"] if log_opts else []),
+            "--redact", "--report-format", "json", "--report-path", "/out/gitleaks.json", "--exit-code", "0"]]
     if section_id == "code":
         excludes = [a for d in EXCLUDED_DIRS for a in ("--exclude", d)]
         return [_docker(TOOL_IMAGES["semgrep"], [repo, outm], ["-w", "/repo", *GIT_SAFE_DIR]) + [
@@ -143,7 +143,8 @@ def _timeout_section(section_id: str, deadline: float) -> Section:
 
 
 def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, executor: Executor,
-                 remaining: Callable[[], float], deadline: float, mode: str = "ci") -> Section:
+                 remaining: Callable[[], float], deadline: float, mode: str = "ci",
+                 log_opts: Optional[str] = None) -> Section:
     filename, parser, accepted = OUTPUTS[section_id]
     target = out / filename
     if target.exists():
@@ -152,7 +153,7 @@ def _run_section(section_id: str, root: Path, out: Path, scanner_dir: Path, exec
     for extra in extras:
         if extra.exists():
             extra.unlink()
-    for cmd in build_commands(section_id, root, out, scanner_dir, mode):
+    for cmd in build_commands(section_id, root, out, scanner_dir, mode, log_opts):
         stdout_path = target if section_id == "dockerfile_policy" else None
         left = remaining()
         if left <= 0:

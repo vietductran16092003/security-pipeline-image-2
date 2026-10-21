@@ -12,6 +12,7 @@ from .docker_desktop import DockerDesktop, DockerUnavailable
 from .mailer import send_email
 from .previous import fetch_previous_report
 from .local import check_project
+from .prepush import prepush
 from .reporting import build_and_write_report, load_previous
 from .runner import default_executor
 
@@ -94,6 +95,9 @@ def main(argv, executor=default_executor, smtp_factory=smtplib.SMTP_SSL, docker=
     check = sub.add_parser("check", help="Quét dự án trên máy, lưu lịch sử và mở báo cáo")
     check.add_argument("--root", required=True)
     check.add_argument("--scanner-dir", default=str(Path(__file__).resolve().parent.parent))
+    pp = sub.add_parser("prepush", help="Hook pre-push: đọc danh sách ref từ stdin")
+    pp.add_argument("--root", default=".")
+    pp.add_argument("--scanner-dir", default=str(Path(__file__).resolve().parent.parent))
     send = sub.add_parser("send", help="Gửi email báo cáo")
     send.add_argument("--out", required=True)
     args = parser.parse_args(argv)
@@ -101,6 +105,8 @@ def main(argv, executor=default_executor, smtp_factory=smtplib.SMTP_SSL, docker=
         return _run(args, executor, docker or DockerDesktop())
     if args.cmd == "check":
         return check_project(Path(args.root), Path(args.scanner_dir), executor, docker or DockerDesktop())
+    if args.cmd == "prepush":
+        return prepush(Path(args.root), sys.stdin.read(), Path(args.scanner_dir), executor, docker or DockerDesktop())
     return _send(args, smtp_factory)
 
 
