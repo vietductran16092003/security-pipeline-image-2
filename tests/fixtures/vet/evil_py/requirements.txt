@@ -1,0 +1,4 @@
+requestss==2.0.0
+flask>=2.0
+mylib @ https://example.invalid/mylib.tar.gz
+evil-py-mal==1.0.0
