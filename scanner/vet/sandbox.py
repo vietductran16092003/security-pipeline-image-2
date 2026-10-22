@@ -62,7 +62,7 @@ class VetOutcome:
 
 # ------------------------------------------------------------------ helpers
 
-_CTRL = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩﻿]")
+_CTRL = re.compile(r"[\u061c\u180e\u2028\u2029\x00-\x1f\x7f-\x9f​-‏‪-‮⁦-⁩﻿]")
 
 
 def clean(text, limit: int = 300) -> str:

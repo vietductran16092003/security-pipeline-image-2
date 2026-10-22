@@ -1,3 +1,4 @@
+﻿import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -62,3 +63,16 @@ def test_ask_repo_script_parses():
     cmd = f"[scriptblock]::Create((Get-Content -Raw -LiteralPath '{ASK}')) | Out-Null"
     r = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_vet_cmd_link_only_travels_through_temp_file():
+    text = VET_CMD.read_text(encoding="utf-8")
+    assert "set /p" not in text.lower()
+    allowed = ('set "LINKFILE=', 'if exist "%LINKFILE%"', 'del "%LINKFILE%"',
+               '-OutFile "%LINKFILE%"', '--source-file "%LINKFILE%"')
+    for line in text.splitlines():
+        if "%LINKFILE%" in line:
+            assert any(a in line for a in allowed), line
+        if "python.exe" in line.lower() or "powershell" in line.lower():
+            names = set(re.findall(r"%([A-Za-z_][A-Za-z0-9_]*)(?::[^%]*)?%", line))
+            assert names <= {"ROOT", "LINKFILE", "TEMP"}, line

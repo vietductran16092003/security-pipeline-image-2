@@ -183,3 +183,35 @@ def test_main_source_file_reads_utf8_and_never_via_shell(tmp_path, monkeypatch):
     assert main(["vet", "--source-file", str(f)], docker=FakeDocker()) == 0
     assert seen == ["o/r"]
     assert main(["vet", "--source-file", str(tmp_path / "missing.txt")], docker=FakeDocker()) == 2
+
+def test_bidi_separators_stripped_in_names_notes_and_errors():
+    junk = "\u061c\u2028\u2029\u180e\u200b\u200f\u202a\u202e\u2066\u2069\ufeff"
+    sig = Signal("i", "low", "a" + junk + "b.txt", 1, "w")
+    h = render_vet_html(_outcome(Verdict.SUSPICIOUS, [sig], incomplete=["n" + junk + "ote"],
+                                 tool_errors=["e" + junk + "rr"]))
+    assert "ab.txt" in h and "note" in h and "err" in h
+    assert not any(c in h for c in junk)
+
+
+def test_no_verdict_badge_is_neutral_grey_only():
+    h = render_vet_html(VetOutcome(None, None, "x", False, [], SRC))
+    assert "background:#eaecf0;color:#344054" in h
+    for color in ("#b42318", "#fee4e2", "#b54708", "#fef0c7", "#067647", "#dcfae6"):
+        assert color not in h
+
+
+def test_cli_vet_leaves_docker_it_did_not_start_running():
+    docker = FakeDocker(started=False)
+    C.vet_command("o/r", None, docker, open_report=lambda p: True, parse=lambda t: SRC,
+                  vet=lambda s, e, d: _outcome(Verdict.SAFER))
+    assert not docker.stopped
+
+
+def test_cli_vet_report_write_error_is_friendly_exit_2(monkeypatch, capsys):
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(C.store, "new_run_dir", boom)
+    code = C.vet_command("o/r", None, FakeDocker(), open_report=lambda p: True, parse=lambda t: SRC,
+                         vet=lambda s, e, d: _outcome(Verdict.SAFER))
+    out = capsys.readouterr().out
+    assert code == 2 and "Không lưu được báo cáo" in out and "disk full" in out

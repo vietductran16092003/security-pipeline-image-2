@@ -55,10 +55,15 @@ def vet_command(text: str, executor, docker, open_report: Callable[[str], object
         if started:
             docker.stop()
     slug = "vet/" + store.slug_for_text(src.display)
-    out = store.new_run_dir(slug)
-    report_file = out / "vet.html"
-    report_file.write_text(render_vet_html(outcome), encoding="utf-8")
-    (out / "vet.json").write_text(json.dumps(_vet_json(outcome), ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        out = store.new_run_dir(slug)
+        report_file = out / "vet.html"
+        report_file.write_text(render_vet_html(outcome), encoding="utf-8")
+        (out / "vet.json").write_text(json.dumps(_vet_json(outcome), ensure_ascii=False, indent=2),
+                                      encoding="utf-8")
+    except OSError as exc:
+        print(f"Không lưu được báo cáo: {clean(exc, 300)}")
+        return 2
     store.prune(slug, keep=20)
     shown = clean(src.display, 200)
     if outcome.verdict is None:
