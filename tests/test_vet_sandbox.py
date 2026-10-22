@@ -554,3 +554,45 @@ def test_keyboard_interrupt_during_fetch_removes_containers_before_volumes():
     assert rm_idx and vol_idx and max(rm_idx) < min(vol_idx)
     assert fetch_name in cmds[rm_idx[0]]
     assert "analyze" not in ex.steps()
+
+
+# ------------------------------------------------------------------ fix round 3 (hostile types)
+
+@pytest.mark.parametrize("level", [[1], {}, {"a": 1}, 5, None, True, 1.5, [], "x"])
+def test_unhashable_or_wrong_type_level_rejected(level):
+    text = json.dumps({"signals": [{"id": "x", "level": level, "file": "a", "line": 1, "why": "w"}],
+                       "incomplete": []})
+    assert sb.parse_result(text) is None
+    out = run(FakeExec(outputs={"read": text}))
+    assert out.verdict == Verdict.SUSPICIOUS and out.tool_errors
+
+
+@pytest.mark.parametrize("field", ["id", "file", "why", "line"])
+@pytest.mark.parametrize("val", [[1], {}, {"a": 1}, 5.5, True])
+def test_hostile_other_fields_never_raise(field, val):
+    s = {"id": "x", "level": "low", "file": "a", "line": 1, "why": "w"}
+    s[field] = val
+    assert sb.parse_result(json.dumps({"signals": [s], "incomplete": []})) is None
+
+
+@pytest.mark.parametrize("inc", [[[1]], [{}], [None], [5], "str", {"a": 1}])
+def test_hostile_incomplete_never_raises(inc):
+    assert sb.parse_result(json.dumps({"signals": [], "incomplete": inc})) is None
+
+
+@pytest.mark.parametrize("pk", ["5", "{}", '"str"', "null", "[[1,2,3]]", '[[[1],"a","1"]]', '[["npm",[1],"1"]]',
+                                '[["npm","a",[1]]]', pytest.param("[" * 200000, id="deep"), "x"])
+def test_hostile_packages_output_never_raises(pk):
+    out = run(FakeExec(outputs={"packages": pk}))
+    assert out.verdict is not None  # khong nem ngoai le
+
+
+@pytest.mark.parametrize("resp", [b"[]", b"5", b"null", b'{"results": 5}', b'{"results": [[1]]}',
+                                  b'{"results": [{"vulns": 5}]}', b'{"results": [{"vulns": [5, null, [1], {"id": [1]}, {"id": {}}]}]}',
+                                  b'{"results": [{"vulns": {"id": "MAL-1"}}]}', b"\xff\xfe", pytest.param(b"[" * 200000, id="deep")])
+def test_hostile_osv_response_never_raises(resp):
+    from scanner.vet import osv
+    r = osv.lookup_osv([("npm", "a", "1.0.0")], lambda u, b: resp)
+    assert r["malicious"] == [] 
+    out = run(FakeExec(outputs={"packages": json.dumps([["npm", "a", "1.0.0"]])}), http=lambda u, b: resp)
+    assert out.verdict is not None

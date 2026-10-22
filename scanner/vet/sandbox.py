@@ -246,7 +246,7 @@ def parse_result(text: str) -> Optional[ScanResult]:
         sid, level = _str_field(s.get("id"), 200), s.get("level")
         file, why = _str_field(s.get("file"), 1000), _str_field(s.get("why"), 1000)
         line = s.get("line")
-        if sid is None or file is None or why is None or level not in _LEVELS:
+        if sid is None or file is None or why is None or not isinstance(level, str) or level not in _LEVELS:
             return None
         if line is not None and (isinstance(line, bool) or not isinstance(line, int) or not 0 <= line < 10**9):
             return None
@@ -344,9 +344,12 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
 
         executor(build_packages_command(vol, nm("packages")), tdir / "packages.json", STEP_TIMEOUT)
         try:
-            pk = valid_packages(json.loads(_read_text(tdir / "packages.json")))
+            raw = json.loads(_read_text(tdir / "packages.json"))
+            if not isinstance(raw, list):
+                raise ValueError("danh sách gói không phải list")
+            pk = valid_packages(raw)
             osv = lookup_osv(pk, http)
-        except ValueError:
+        except (ValueError, RecursionError, MemoryError):
             osv = {"malicious": [], "error": "không liệt kê được gói từ package-lock.json"}
         if osv.get("error"):
             tool_errors.append("Tra cứu OSV (gói độc hại) không đầy đủ: " + clean(osv["error"], 150))
