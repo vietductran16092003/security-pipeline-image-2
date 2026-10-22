@@ -40,6 +40,26 @@ def default_http(url: str, body: bytes) -> bytes:
         return resp.read(50_000_000)
 
 
+def valid_packages_counted(packages) -> tuple[list[tuple[str, str, str]], int]:
+    """Như valid_packages nhưng đếm số mục bị bỏ (sai định dạng/regex/phiên bản lạ; trùng thì không tính).
+    Lockfile của hệ sinh thái khác npm không bao giờ được liệt kê (ngoài phạm vi), nên không nằm ở đây."""
+    out, seen, dropped = [], set(), 0
+    for item in packages or []:
+        ok = isinstance(item, (list, tuple)) and len(item) == 3
+        if ok:
+            eco, name, ver = item
+            ok = (eco == "npm" and isinstance(name, str) and isinstance(ver, str)
+                  and _NPM_NAME.fullmatch(name) is not None and _VERSION.fullmatch(ver) is not None)
+        if not ok:
+            dropped += 1
+            continue
+        key = (eco, name, ver)
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out, dropped
+
+
 def valid_packages(packages) -> list[tuple[str, str, str]]:
     """Giữ bộ ba hợp lệ (chỉ npm), bỏ trùng, giới hạn số lượng."""
     out, seen = [], set()

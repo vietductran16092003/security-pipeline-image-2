@@ -26,7 +26,7 @@ from typing import Callable, Optional
 
 from ..docker_desktop import DockerUnavailable
 from . import source as S
-from .osv import Http, default_http, lookup_osv, valid_packages
+from .osv import Http, default_http, lookup_osv, valid_packages_counted
 from .signals import ScanResult, Signal
 from .verdict import Verdict, decide
 
@@ -347,8 +347,11 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
             raw = json.loads(_read_text(tdir / "packages.json"))
             if not isinstance(raw, list):
                 raise ValueError("danh sách gói không phải list")
-            pk = valid_packages(raw)
+            pk, dropped = valid_packages_counted(raw)
             osv = lookup_osv(pk, http)
+            if dropped:
+                msg = f"Bỏ qua {dropped} gói không hợp lệ khi tra OSV"
+                osv["error"] = "; ".join(x for x in (osv.get("error"), msg) if x)
         except (ValueError, RecursionError, MemoryError):
             osv = {"malicious": [], "error": "không liệt kê được gói từ package-lock.json"}
         if osv.get("error"):

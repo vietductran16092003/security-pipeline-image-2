@@ -54,6 +54,11 @@ def _safe(s: str, limit: int = 120) -> str:
     return "".join(c if c.isprintable() else "?" for c in str(s))[:limit]
 
 
+def _u8(s):
+    """Chuỗi do repo kiểm soát (tên file, tên gói...) -> UTF-8 hợp lệ (surrogate lẻ -> U+FFFD)."""
+    return s.encode("utf-8", "replace").decode("utf-8") if isinstance(s, str) else s
+
+
 def _find_line(lines: list[str], needle: str, start: int = 0) -> int | None:
     for i in range(start, len(lines)):
         if needle in lines[i]:
@@ -71,6 +76,7 @@ class _Scan:
         self.file_lines: dict[str, list[str]] = {}
 
     def add(self, sid, level, file, line, why, key=None) -> None:
+        sid, file, why = _u8(sid), _u8(file), _u8(why)
         k = (sid, file, key)
         if k in self.seen:
             return
@@ -83,6 +89,7 @@ class _Scan:
         self.res.signals.append(Signal(sid, level, file, line, why))
 
     def note(self, msg: str) -> None:
+        msg = _u8(msg)
         if len(self.res.incomplete) < 200:
             self.res.incomplete.append(msg)
 
