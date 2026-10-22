@@ -16,6 +16,7 @@ Nó tìm được những thứ như:
 | Xem dự án trên máy mình có lỗi gì, bất cứ lúc nào | [Cách 1: Quét bằng cách nhấp đúp](#cách-1-quét-dự-án-trên-máy-bằng-nhấp-đúp) | Không |
 | Bị chặn lại nếu sắp đẩy code có mật khẩu bị lộ hoặc lỗi nặng | [Cách 2: Chặn lỗi trước khi push](#cách-2-chặn-lỗi-nặng-trước-khi-push) | Biết dùng `git push` |
 | Mỗi lần đẩy code lên GitHub thì tự quét và nhận email báo cáo | [Cách 3: Tự quét trên GitHub](#cách-3-tự-quét-trên-github-và-nhận-email) | Biết tạo một file trong dự án |
+| Xem một dự án lạ trên mạng có đáng ngờ không, trước khi tải về máy | [Cách 4: Kiểm tra repo lạ](#cách-4-kiểm-tra-repo-lạ-trước-khi-tải-về) | Không |
 
 Chưa rõ nên chọn gì thì bắt đầu với Cách 1. Cách này dễ nhất và không thay đổi gì trong dự án của bạn.
 
@@ -23,11 +24,11 @@ Nếu gặp từ lạ, xem [Giải thích từ ngữ](#giải-thích-từ-ngữ)
 
 ## Chuẩn bị (làm một lần)
 
-Cách 1 và Cách 2 chạy trên máy Windows của bạn, nên cần cài 3 thứ sau. Cách 3 chạy trên GitHub nên không cần cài gì.
+Cách 1, 2 và 4 chạy trên máy Windows của bạn, nên cần cài 3 thứ sau. Cách 3 chạy trên GitHub nên không cần cài gì.
 
 1. **Python, bản 3.11 trở lên.** Tải ở https://www.python.org/downloads/. Khi cài, tick ô **Add Python to PATH**.
 2. **Docker Desktop.** Tải ở https://www.docker.com/products/docker-desktop/. Cài xong, mở nó một lần để chấp nhận điều khoản. Từ lần sau, công cụ tự mở Docker khi cần.
-3. **Git.** Tải ở https://git-scm.com/download/win. Cách 2 cần nó. Nếu bạn chỉ dùng Cách 1 thì bỏ qua.
+3. **Git.** Tải ở https://git-scm.com/download/win. Cách 2 cần nó. Nếu bạn chỉ dùng Cách 1 hoặc Cách 4 thì bỏ qua.
 
 Sau đó tải công cụ này về máy:
 
@@ -137,7 +138,61 @@ GitHub giữ kín 3 mục này. Người khác xem dự án cũng không đọc 
 
 **Muốn xem kết quả mà không có email:** ở tab **Actions**, mở lần chạy, xem phần tóm tắt (tên tiếng Anh là Job Summary). Hoặc kéo xuống cuối, tải file đính kèm `security-report`, giải nén rồi mở `email.html`.
 
+## Cách 4: Kiểm tra repo lạ trước khi tải về
+
+Bạn thấy một dự án trên GitHub hoặc GitLab, chưa chắc nó có an toàn không, và muốn xem trước khi tải về hay chạy thử. Cách này giúp bạn. Công cụ tải dự án đó vào một "hộp cách ly" của Docker (không có mạng khi phân tích), tìm những dấu hiệu hay gặp ở dự án độc hại, rồi cho bạn một trong 3 kết quả.
+
+**Cách này không làm gì với máy bạn:** nó không tải dự án đó vào thư mục nào của bạn, không chạy code của dự án, và xoá hộp cách ly khi xong. Cần Docker Desktop và phần [Chuẩn bị](#chuẩn-bị-làm-một-lần) ở trên (làm một lần).
+
+**Các bước**
+
+1. Mở thư mục công cụ (ví dụ `D:\Cong-cu-quet`).
+2. Nhấp đúp vào file **`Kiem-tra-repo-la.cmd`**.
+3. **Lần đầu tiên**, chờ vài phút để công cụ tự cài đặt và dựng hộp cách ly. Những lần sau nhanh hơn.
+4. Một hộp thoại hiện ra. Dán link dự án vào rồi bấm **Kiểm tra**. Bấm **Huỷ** nếu muốn thôi.
+5. Chờ vài phút. Cửa sổ đen cho biết kết quả.
+6. Báo cáo tự mở trong trình duyệt. Nó nêu file và dòng nào bị nghi ngờ, và vì sao.
+7. Nhấn phím bất kỳ để đóng cửa sổ đen.
+
+**Dán link kiểu nào được**
+
+| Bạn dán | Ví dụ |
+|---|---|
+| Dạng ngắn của GitHub: tên chủ và tên dự án | `owner/repo` |
+| Link đầy đủ của GitHub | `https://github.com/owner/repo` |
+| Link GitLab, kể cả dự án nằm trong nhóm | `https://gitlab.com/nhom/nhom-con/du-an` |
+| Muốn kiểm tra một nhánh khác nhánh mặc định: thêm `@` và tên nhánh | `owner/repo@ten-nhanh` |
+
+Chỉ kiểm tra được dự án **công khai**. Dự án riêng tư (private), link sai, hoặc địa chỉ không phải GitHub/GitLab bị từ chối ngay, không có kết quả.
+
+**Ba kết quả nghĩa là gì**
+
+| Kết quả | Nghĩa là | Bạn nên |
+|---|---|---|
+| **Không nên mở** | Thấy dấu hiệu rõ của mã độc, ví dụ tự tải và chạy file lạ khi cài, mã bị giấu, đọc khoá bí mật trên máy | Đừng tải, đừng cài, đừng chạy |
+| **Đáng ngờ** | Có chỗ đáng nghi, hoặc công cụ chưa kiểm tra được hết (ví dụ dự án quá lớn) | Đọc báo cáo, chỉ dùng khi bạn hiểu và chấp nhận từng điểm |
+| **An toàn hơn** | Không thấy dấu hiệu nào trong những thứ công cụ kiểm tra | Vẫn nên cẩn thận, xem giới hạn bên dưới |
+
+Ba kết quả này **không phải** các mức P1/P2 của Cách 1 đến Cách 3. P1/P2 xếp lỗi trong dự án của chính bạn. Còn 3 kết quả này trả lời một câu hỏi khác: dự án của người lạ có đáng tin không.
+
+**Giới hạn thật thà:** cách này chỉ **giảm rủi ro**, không chứng minh dự án sạch. Kẻ xấu có thể giấu mã theo cách công cụ chưa biết. "An toàn hơn" nghĩa là *đỡ rủi ro hơn*, không phải *chắc chắn an toàn*. Báo cáo luôn ghi dòng nhắc này.
+
+Nếu công cụ không kiểm tra được gì (link sai, mạng lỗi, dự án riêng tư...), nó báo **"Không kiểm tra được"** và **không đưa ra kết quả nào**. Đừng hiểu đó là "sạch".
+
+**Báo cáo được lưu ở đâu:** trong `%LOCALAPPDATA%\security-scan\vet` (dán đường dẫn này vào thanh địa chỉ của File Explorer). Mỗi dự án có thư mục riêng, mỗi lần kiểm tra một thư mục con theo ngày giờ, giữ 20 lần gần nhất. Mở lại file `vet.html` bằng trình duyệt.
+
+**Gặp sự cố với Cách 4**
+
+| Bạn thấy | Làm thế này |
+|---|---|
+| "Không kiểm tra được" | Đọc dòng lý do ngay bên dưới. Thường do dự án riêng tư hoặc không tồn tại, nhánh không có, mạng lỗi, hoặc dự án lớn hơn 500 MB. Thử lại sau khi kiểm tra link |
+| Báo link không hợp lệ | Chỉ nhận `owner/repo`, link GitHub, hoặc link GitLab công khai. Không dùng `http://`, địa chỉ máy nội bộ, hay link có khoảng trắng |
+| Báo Docker không dùng được | Mở Docker Desktop bằng tay, chờ biểu tượng cá voi ngừng chuyển động, rồi chạy lại |
+| Lần đầu chạy rất lâu | Bình thường. Docker đang dựng hộp cách ly và tải công cụ. Những lần sau nhanh hơn |
+
 ## Đọc báo cáo
+
+Phần này nói về báo cáo của Cách 1 đến Cách 3. Báo cáo của Cách 4 đọc theo [Cách 4](#cách-4-kiểm-tra-repo-lạ-trước-khi-tải-về).
 
 ### Báo cáo cho biết điều gì
 
@@ -240,12 +295,6 @@ Báo cáo có một dòng cho biết dự án đang bỏ qua bao nhiêu lỗi th
 
 Công cụ không tự gọi AI. Khi cần xem kỹ một báo cáo, đọc [agents/README.md](agents/README.md). Ở đó có cách chạy 4 trợ lý AI (Context, Exploit, Severity, Recommendation) bằng Claude Code trên báo cáo đã tải về.
 
-## Đang làm, chưa dùng được
-
-**Kiểm tra repo lạ trước khi tải về máy.** Bạn dán link một dự án trên GitHub hoặc GitLab, công cụ mở nó trong một hộp cách ly (không chạm vào máy bạn) và cho biết có dấu hiệu bị gài mã độc hay không. Phần này chưa xong, nên chưa có file nào để bạn bấm. Khi xong, README này sẽ có thêm hướng dẫn.
-
-Tính năng này chỉ giảm rủi ro, không đảm bảo "sạch tuyệt đối".
-
 ## Dành cho người phát triển công cụ
 
 Cài đặt và chạy test:
@@ -273,6 +322,8 @@ Các lệnh khác:
 | `python -m scanner check --root PATH` | Quét trên máy, lưu lịch sử, mở báo cáo (là việc `Quet-du-an.cmd` gọi) |
 | `python -m scanner hook install --root PATH` | Cài chốt kiểm tra trước khi push (hoặc `uninstall` để gỡ) |
 | `python -m scanner prepush --root PATH` | Phần kiểm tra mà chốt trên gọi; đọc dữ liệu push của git từ đầu vào chuẩn |
+| `python -m scanner vet --source owner/repo` | Kiểm tra repo lạ trong sandbox Docker, lưu `vet.html` và `vet.json`, mở trình duyệt (là việc `Kiem-tra-repo-la.cmd` gọi) |
+| `python -m scanner vet --source-file PATH` | Như trên nhưng đọc link từ file (link không đi qua dòng lệnh) |
 | `python -m scanner run --mode local ...` | Như `run` nhưng quét cả file chưa commit và thư mục không có git |
 
 Trên Windows bạn không cần tự mở Docker Desktop. Nếu Docker chưa chạy, công cụ tự mở (chờ tối đa 3 phút) và tắt lại sau khi quét xong. Nếu bạn đã mở từ trước, công cụ để nguyên.
