@@ -39,7 +39,10 @@ ANALYZE_TIMEOUT = 300
 ANALYZE_DEADLINE = 270  # bộ phân tích tự dừng sớm hơn lệnh kill để còn ghi vet.json
 STEP_TIMEOUT = 120
 OUT_BYTES = 32_000_000
-MAX_RESULT_BYTES = 20_000_000
+MAX_RESULT_BYTES = 5_000_000
+MAX_OSV_ARG = 20_000  # argv Windows tối đa ~32K ký tự; chừa chỗ cho phần còn lại của lệnh
+_LEVELS = frozenset({"high", "medium", "low", "info"})
+_MAX_SIGNALS = 2000
 _VOLUME = re.compile(r"scanvet-[0-9a-f]{8,32}(-out)?")
 _PKG_DIR = Path(__file__).resolve().parent
 
@@ -144,22 +147,22 @@ def build_fetch_command(src: S.Source, volume: str, max_bytes: int = MAX_BYTES, 
     return cmd + ["--", src.clone_url, "/work/repo"]
 
 
-def build_size_command(volume: str) -> list[str]:
+def build_size_command(volume: str, name: Optional[str] = None) -> list[str]:
     _check_volume(volume)
-    return _base("size", _name("size")) + ["-v", f"{volume}:/work:ro", "--entrypoint", "du",
+    return _base("size", name or _name("size")) + ["-v", f"{volume}:/work:ro", "--entrypoint", "du",
                                            GIT_IMAGE, "-sk", "/work"]
 
 
-def build_packages_command(volume: str) -> list[str]:
+def build_packages_command(volume: str, name: Optional[str] = None) -> list[str]:
     _check_volume(volume)
-    return _base("packages", _name("packages"), memory="512m") + [
+    return _base("packages", name or _name("packages"), memory="512m") + [
         "-v", f"{volume}:/work:ro", "--entrypoint", "python", VET_IMAGE,
         "-m", "scanner.vet.osv", "list", "/work/repo"]
 
 
-def build_osv_write_command(out_volume: str, osv: dict) -> list[str]:
+def build_osv_write_command(out_volume: str, osv: dict, name: Optional[str] = None) -> list[str]:
     _check_volume(out_volume)
-    return _base("osv-write", _name("osvw")) + [
+    return _base("osv-write", name or _name("osvw")) + [
         "-v", f"{out_volume}:/out", "--entrypoint", "python", VET_IMAGE,
         "-m", "scanner.vet.osv", "write", "/out/osv.json", json.dumps(osv, ensure_ascii=True)]
 
@@ -173,9 +176,9 @@ def build_analyze_command(volume: str, out_volume: str, *, memory: str = "1g", p
         "/work/repo", "--osv", "/out/osv.json", "--out", "/out/vet.json", "--deadline", str(ANALYZE_DEADLINE)]
 
 
-def build_read_command(out_volume: str) -> list[str]:
+def build_read_command(out_volume: str, name: Optional[str] = None) -> list[str]:
     _check_volume(out_volume)
-    return _base("read", _name("read")) + ["-v", f"{out_volume}:/in:ro", "--entrypoint", "cat",
+    return _base("read", name or _name("read")) + ["-v", f"{out_volume}:/in:ro", "--entrypoint", "cat",
                                            GIT_IMAGE, "/in/vet.json"]
 
 
@@ -211,27 +214,40 @@ def _read_text(path: Path) -> str:
         return ""
 
 
+def _str_field(v, limit: int) -> Optional[str]:
+    return v if isinstance(v, str) and len(v) <= limit else None
+
+
 def parse_result(text: str) -> Optional[ScanResult]:
+    """vet.json do container (không tin cậy) -> ScanResult, hoặc None nếu hỏng/sai schema.
+    None luôn dẫn tới SUSPICIOUS + tool_error ở vet_repo, không bao giờ ném ngoại lệ."""
+    if not isinstance(text, str) or len(text) > MAX_RESULT_BYTES:
+        return None
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError, MemoryError):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("signals"), list) \
             or not isinstance(data.get("incomplete"), list):
         return None
+    if len(data["signals"]) > _MAX_SIGNALS:
+        return None
     sigs = []
-    for s in data["signals"][:2000]:
+    for s in data["signals"]:
         if not isinstance(s, dict):
-            continue
+            return None
+        sid, level = _str_field(s.get("id"), 200), s.get("level")
+        file, why = _str_field(s.get("file"), 1000), _str_field(s.get("why"), 1000)
         line = s.get("line")
-        try:
-            line = int(line) if line is not None and not isinstance(line, bool) else None
-        except (TypeError, ValueError):
-            line = None
-        sigs.append(Signal(clean(s.get("id", ""), 80), clean(s.get("level", ""), 20),
-                           clean(s.get("file", ""), 300), line, clean(s.get("why", ""), 300)))
-    return ScanResult(sigs, [clean(i, 300) for i in data["incomplete"][:200]])
-
+        if sid is None or file is None or why is None or level not in _LEVELS:
+            return None
+        if line is not None and (isinstance(line, bool) or not isinstance(line, int) or not 0 <= line < 10**9):
+            return None
+        sigs.append(Signal(clean(sid, 80), level, clean(file, 300), line, clean(why, 300)))
+    inc = data["incomplete"][:200]
+    if not all(isinstance(i, str) for i in inc):
+        return None
+    return ScanResult(sigs, [clean(i, 300) for i in inc])
 
 def _parse_kb(text: str) -> Optional[int]:
     m = re.match(r"\s*(\d+)", text or "")
@@ -242,6 +258,21 @@ def _parse_kb(text: str) -> Optional[int]:
 
 def _fail(src, msg, truncated=False) -> VetOutcome:
     return VetOutcome(None, None, msg, truncated, [], src)
+
+
+def _cleanup(executor, names: list[str], created: list[str]) -> None:
+    """Kill container trước, rồi xoá volume (thử lại 1 lần). Lỗi dọn dẹp không che ngoại lệ gốc."""
+    def attempt(cmd: list[str]) -> int:
+        try:
+            return executor(cmd, None, STEP_TIMEOUT)
+        except Exception:  # noqa: BLE001 - dọn dẹp là best-effort
+            return 1
+    if names:
+        attempt(["docker", "rm", "-f", *names])
+    if created and attempt(["docker", "volume", "rm", "-f", *created]) != 0:
+        if names:
+            attempt(["docker", "rm", "-f", *names])
+        attempt(["docker", "volume", "rm", "-f", *created])
 
 
 def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] = None,
@@ -263,6 +294,12 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
     vol, out_vol = new_volume_name(), None
     out_vol = vol + "-out"
     created: list[str] = []
+    names: list[str] = []
+
+    def nm(step_name: str) -> str:
+        n = _name(step_name)
+        names.append(n)  # mọi container đều có tên đã biết để `docker rm -f` khi dọn
+        return n
     tool_errors: list[str] = []
     truncated = False
     tmp = tempfile.TemporaryDirectory(prefix="scanvet-")
@@ -276,9 +313,10 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
         if fetch is not None:
             code = fetch(executor, vol)
         else:
-            code = executor(build_fetch_command(src, vol, max_bytes, pinned_ip=ip), None, FETCH_TIMEOUT)
+            code = executor(build_fetch_command(src, vol, max_bytes, pinned_ip=ip, name=nm("fetch")),
+                       None, FETCH_TIMEOUT)
 
-        executor(build_size_command(vol), tdir / "size.txt", STEP_TIMEOUT)
+        executor(build_size_command(vol, nm("size")), tdir / "size.txt", STEP_TIMEOUT)
         kb = _parse_kb(_read_text(tdir / "size.txt"))
         if kb is not None and kb * 1024 >= max_bytes * 0.95:
             truncated = True
@@ -292,7 +330,7 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
         if kb is None:
             tool_errors.append("Không đo được dung lượng repo")
 
-        executor(build_packages_command(vol), tdir / "packages.json", STEP_TIMEOUT)
+        executor(build_packages_command(vol, nm("packages")), tdir / "packages.json", STEP_TIMEOUT)
         try:
             pk = valid_packages(json.loads(_read_text(tdir / "packages.json")))
             osv = lookup_osv(pk, http)
@@ -300,10 +338,17 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
             osv = {"malicious": [], "error": "không liệt kê được gói từ package-lock.json"}
         if osv.get("error"):
             tool_errors.append("Tra cứu OSV (gói độc hại) không đầy đủ: " + clean(osv["error"], 150))
-        if executor(build_osv_write_command(out_vol, osv), None, STEP_TIMEOUT) != 0:
+        if len(json.dumps(osv, ensure_ascii=True)) > MAX_OSV_ARG:
+            # Không có stdin trong executor: giới hạn kích thước argv, ghi nhận là chưa đầy đủ.
+            mal = list(osv.get("malicious") or [])
+            while mal and len(json.dumps({"malicious": mal, "error": "x"}, ensure_ascii=True)) > MAX_OSV_ARG:
+                mal = mal[:len(mal) // 2]
+            osv = {"malicious": mal, "error": "kết quả OSV quá lớn, đã cắt bớt"}
+            tool_errors.append("Tra cứu OSV (gói độc hại) không đầy đủ: kết quả quá lớn, đã cắt bớt")
+        if executor(build_osv_write_command(out_vol, osv, nm("osvw")), None, STEP_TIMEOUT) != 0:
             tool_errors.append("Không chuyển được kết quả OSV vào bước phân tích")
 
-        acode = executor(build_analyze_command(vol, out_vol), None, ANALYZE_TIMEOUT)
+        acode = executor(build_analyze_command(vol, out_vol, name=nm("analyze")), None, ANALYZE_TIMEOUT)
         if acode == 124:
             tool_errors.append("Phân tích quá 5 phút, đã dừng")
         elif acode == 137:
@@ -311,7 +356,7 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
         elif acode != 0:
             tool_errors.append(f"Bộ phân tích thoát mã {acode}")
 
-        executor(build_read_command(out_vol), tdir / "vet.json", STEP_TIMEOUT)
+        executor(build_read_command(out_vol, nm("read")), tdir / "vet.json", STEP_TIMEOUT)
         result = parse_result(_read_text(tdir / "vet.json"))
         if result is None:
             result = ScanResult([], ["Không đọc được kết quả phân tích (vet.json thiếu hoặc hỏng)"])
@@ -323,10 +368,6 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
         return VetOutcome(verdict, result, None, truncated, tool_errors, src)
     finally:
         try:
-            if created and executor(["docker", "volume", "rm", "-f", *created], None, STEP_TIMEOUT) != 0:
-                # Container bị kill vì quá giờ có thể chưa kịp tự xoá -> dọn rồi thử lại.
-                executor(["docker", "container", "prune", "-f", "--filter", "label=scanvet=1"],
-                         None, STEP_TIMEOUT)
-                executor(["docker", "volume", "rm", "-f", *created], None, STEP_TIMEOUT)
+            _cleanup(executor, names, created)
         finally:
             tmp.cleanup()

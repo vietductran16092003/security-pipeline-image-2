@@ -255,7 +255,7 @@ def test_osv_hit_passed_to_analysis():
 
 
 def test_result_strings_sanitized():
-    vet = {"signals": [{"id": "x\x1b[2J", "level": "medium", "file": "a\x07\r\nb", "line": "7",
+    vet = {"signals": [{"id": "x\x1b[2J", "level": "medium", "file": "a\x07\r\nb", "line": 7,
                         "why": "w\x1b]0;pwn\x07"}], "incomplete": ["i\x1b[1m"]}
     out = run(FakeExec(outputs={"read": json.dumps(vet)}))
     s = out.result.signals[0]
@@ -303,3 +303,193 @@ def test_dockerfile_pinned_nonroot_no_installs():
     assert "FROM python:3.12." in text and "-slim" in text
     assert "USER 10001" in text
     assert "pip" not in text and "apt" not in text
+
+
+# ------------------------------------------------------------------ review fixes (Task 10)
+
+def _val(cmd, flag):
+    return cmd[cmd.index(flag) + 1]
+
+
+def test_parse_result_hostile_json_never_raises():
+    assert sb.parse_result("[" * 200000) is None
+    assert sb.parse_result("{" * 200000) is None
+    assert sb.parse_result('{"signals": ' + "[" * 100000) is None
+
+
+def test_parse_result_hostile_vet_json_gives_suspicious_not_traceback():
+    out = run(FakeExec(outputs={"read": "[" * 200000}))
+    assert out.verdict == Verdict.SUSPICIOUS and out.tool_errors
+
+
+def test_parse_result_size_cap():
+    big = json.dumps({"signals": [], "incomplete": ["x" * 100]}) + " " * (sb.MAX_RESULT_BYTES + 10)
+    assert sb.parse_result(big) is None
+
+
+def _sig(**kw):
+    s = {"id": "x", "level": "low", "file": "a", "line": 1, "why": "w"}
+    s.update(kw)
+    return json.dumps({"signals": [s], "incomplete": []})
+
+
+@pytest.mark.parametrize("bad", [
+    {"level": "critical"}, {"level": "HIGH"}, {"level": ""}, {"level": None}, {"level": 5},
+    {"id": 5}, {"file": ["a"]}, {"why": None}, {"line": "7"}, {"line": 1.5}, {"line": True},
+    {"id": "x" * 500}, {"file": "f" * 5000}, {"why": "w" * 5000}, {"line": -1},
+])
+def test_parse_result_strict_schema_rejects(bad):
+    assert sb.parse_result(_sig(**bad)) is None
+
+
+def test_parse_result_non_dict_signal_and_non_str_incomplete_rejected():
+    assert sb.parse_result(json.dumps({"signals": ["x"], "incomplete": []})) is None
+    assert sb.parse_result(json.dumps({"signals": [], "incomplete": [5]})) is None
+    assert sb.parse_result(json.dumps({"signals": [{"id": "x"}], "incomplete": []})) is None
+
+
+@pytest.mark.parametrize("lv", ["high", "medium", "low", "info"])
+def test_parse_result_accepts_whitelisted_levels(lv):
+    assert sb.parse_result(_sig(level=lv)).signals[0].level == lv
+    assert sb.parse_result(_sig(line=None)).signals[0].line is None
+
+
+def test_unknown_level_never_safer_via_vet_repo():
+    out = run(FakeExec(outputs={"read": _sig(level="critical")}))
+    assert out.verdict == Verdict.SUSPICIOUS and out.tool_errors
+
+
+def _removed_names(ex):
+    out = []
+    for c, _ in ex.cmds:
+        if c[:3] == ["docker", "rm", "-f"]:
+            out += c[3:]
+    return out
+
+
+def _run_names(ex):
+    return [c[c.index("--name") + 1] for c, _ in ex.cmds if c[:2] == ["docker", "run"]]
+
+
+def test_keyboard_interrupt_mid_analysis_kills_containers_before_volume_rm():
+    ex = FakeExec(raises={"analyze": KeyboardInterrupt()})
+    with pytest.raises(KeyboardInterrupt):
+        run(ex)
+    names = _run_names(ex)
+    analyze_name = [c[c.index("--name") + 1] for c in ex.find("analyze")][0]
+    assert analyze_name in names
+    cmds = [c for c, _ in ex.cmds]
+    rm_idx = [i for i, c in enumerate(cmds) if c[:3] == ["docker", "rm", "-f"]]
+    vol_idx = [i for i, c in enumerate(cmds) if c[:3] == ["docker", "volume", "rm"]]
+    assert rm_idx and vol_idx and max(rm_idx) < min(vol_idx)
+    assert set(names) <= set(_removed_names(ex))
+    assert cmds[vol_idx[0]][:4] == ["docker", "volume", "rm", "-f"]
+    created = [c[-1] for c in cmds if c[:3] == ["docker", "volume", "create"]]
+    assert cmds[vol_idx[0]][4:] == created
+
+
+def test_volume_rm_failure_retried_after_container_rm_and_exception_propagates():
+    class Ex(FakeExec):
+        vol_calls = 0
+
+        def __call__(self, cmd, stdout_path, timeout):
+            if cmd[:3] == ["docker", "volume", "rm"]:
+                self.cmds.append((cmd, timeout))
+                Ex.vol_calls += 1
+                return 1 if Ex.vol_calls == 1 else 0
+            return super().__call__(cmd, stdout_path, timeout)
+    ex = Ex(raises={"analyze": RuntimeError("boom")})
+    with pytest.raises(RuntimeError, match="boom"):
+        run(ex)
+    cmds = [c for c, _ in ex.cmds]
+    seq = [c[:3] for c in cmds if c[:3] in (["docker", "rm", "-f"], ["docker", "volume", "rm"])]
+    assert seq == [["docker", "rm", "-f"], ["docker", "volume", "rm"],
+                   ["docker", "rm", "-f"], ["docker", "volume", "rm"]]
+    assert Ex.vol_calls == 2
+
+
+def test_cleanup_errors_do_not_mask_original_exception():
+    class Ex(FakeExec):
+        def __call__(self, cmd, stdout_path, timeout):
+            if cmd[:2] == ["docker", "rm"] or cmd[:3] == ["docker", "volume", "rm"]:
+                raise OSError("cleanup broke")
+            return super().__call__(cmd, stdout_path, timeout)
+    ex = Ex(raises={"analyze": KeyboardInterrupt()})
+    with pytest.raises(KeyboardInterrupt):
+        run(ex)
+
+
+def _all_run_cmds():
+    ex = FakeExec(outputs={"packages": json.dumps([["npm", "evil", "1.0.0"]])})
+    http = lambda u, b: json.dumps({"results": [{"vulns": [{"id": "MAL-2025-9"}]}]}).encode()  # noqa: E731
+    run(ex, http=http)
+    return ex, [c for c, _ in ex.cmds if c[:2] == ["docker", "run"]]
+
+
+EXPECTED = {  # step -> (memory, pids, has_network, extra volume specs)
+    "fetch": ("1g", "256", True, ["{v}:/work"]),
+    "size": ("256m", "64", False, ["{v}:/work:ro"]),
+    "packages": ("512m", "64", False, ["{v}:/work:ro"]),
+    "osv-write": ("256m", "64", False, ["{o}:/out"]),
+    "analyze": ("1g", "128", False, ["{v}:/work:ro", "{o}:/out"]),
+    "read": ("256m", "64", False, ["{o}:/in:ro"]),
+}
+
+
+def test_every_docker_run_has_full_isolation_with_exact_values():
+    ex, runs = _all_run_cmds()
+    assert sorted(step(c) for c in runs) == sorted(EXPECTED)
+    created = [c[-1] for c, _ in ex.cmds if c[:3] == ["docker", "volume", "create"]]
+    v, o = created
+    for c in runs:
+        s = step(c)
+        mem, pids, net, vols = EXPECTED[s]
+        assert _val(c, "--cap-drop") == "ALL", s
+        assert _val(c, "--security-opt") == "no-new-privileges", s
+        assert "--read-only" in c, s
+        assert _val(c, "--user") == "10001:10001", s
+        assert _val(c, "--memory") == mem and _val(c, "--memory-swap") == mem, s
+        assert _val(c, "--pids-limit") == pids, s
+        assert _val(c, "--tmpfs") == "/tmp:rw,size=64m,noexec,nosuid,nodev", s
+        assert "--privileged" not in c and "--pid" not in c and "--ipc" not in c and "--device" not in c, s
+        assert not any(a.startswith(("--cap-add", "--volumes-from", "--mount")) for a in c), s
+        if net:
+            assert "--network" not in c and _val(c, "--add-host") == f"github.com:{PUBLIC_IP}", s
+        else:
+            assert _val(c, "--network") == "none", s
+        specs = [c[i + 1] for i, a in enumerate(c) if a in ("-v", "--volume")]
+        assert specs == [x.format(v=v, o=o) for x in vols], s
+        assert _val(c, "--name").startswith("scanvet-"), s
+        assert "scanvet=1" in c, s
+    assert len(set(_run_names(ex))) == len(runs)
+
+
+def test_volume_create_is_size_capped_tmpfs():
+    ex, _ = _all_run_cmds()
+    creates = [c for c, _ in ex.cmds if c[:3] == ["docker", "volume", "create"]]
+    assert len(creates) == 2
+    for c in creates:
+        assert "type=tmpfs" in c and any(a.startswith("o=size=") and "mode=0700" in a for a in c)
+
+
+def test_base_helper_regression_would_fail():
+    base = sb._base("x", "scanvet-x-1")
+    assert base[:3] == ["docker", "run", "--rm"]
+    for pair in (["--cap-drop", "ALL"], ["--security-opt", "no-new-privileges"], ["--user", "10001:10001"],
+                 ["--network", "none"]):
+        i = base.index(pair[0])
+        assert base[i:i + 2] == pair
+
+
+def test_osv_payload_capped_for_argv_and_recorded_as_tool_error():
+    many = [["npm", f"pkg{i}", "1.0.0"] for i in range(3000)]
+    ex = FakeExec(outputs={"packages": json.dumps(many)})
+    http = lambda u, b: json.dumps({"results": [  # noqa: E731
+        {"vulns": [{"id": f"MAL-2025-{i}"}]} for i in range(len(json.loads(b)["queries"]))]}).encode()
+    out = run(ex, http=http)
+    w = ex.find("osv-write")[0]
+    assert len(w[-1]) <= sb.MAX_OSV_ARG
+    assert sum(len(a) + 1 for a in w) < 30000
+    payload = json.loads(w[-1])
+    assert payload["error"] and payload["malicious"]
+    assert out.verdict != Verdict.SAFER and any("OSV" in e for e in out.tool_errors)
