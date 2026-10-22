@@ -22,6 +22,19 @@ Chưa rõ nên chọn gì thì bắt đầu với Cách 1. Cách này dễ nhấ
 
 Nếu gặp từ lạ, xem [Giải thích từ ngữ](#giải-thích-từ-ngữ) ở cuối trang.
 
+### Phần nào đã được thử thật
+
+Để bạn biết nên tin đến đâu:
+
+| Cách | Đã thử thật | Chưa thử |
+|---|---|---|
+| 1. Quét bằng nhấp đúp | Quét thư mục không có git, có khoá giả chưa commit: báo đúng điểm F | Dự án lớn, nhiều ngôn ngữ |
+| 2. Chặn trước khi push | Cài chốt, bỏ qua bằng `--no-verify` và `SCAN_SKIP=1` | Nhiều dự án khác nhau; tắt Docker giữa chừng |
+| 3. Tự quét trên GitHub | Chạy xanh trên chính dự án này | Gửi email thật bằng Gmail |
+| 4. Kiểm tra repo lạ | Chạy với 3 dự án mẫu trong hộp cách ly Docker thật | Dán link một dự án thật trên GitHub |
+
+Bạn gặp chỗ nào không đúng như hướng dẫn, hãy xem [Gặp sự cố](#gặp-sự-cố) rồi báo lại.
+
 ## Chuẩn bị (làm một lần)
 
 Cách 1, 2 và 4 chạy trên máy Windows của bạn, nên cần cài 3 thứ sau. Cách 3 chạy trên GitHub nên không cần cài gì.
@@ -70,6 +83,20 @@ Cách này gắn một "chốt kiểm tra" vào dự án. Mỗi lần bạn gõ 
 
 - Không có lỗi nặng: push đi bình thường.
 - Có lỗi nặng: push bị chặn. Công cụ in ra file và dòng có vấn đề (không in nội dung mật khẩu). Bạn sửa rồi push lại.
+
+**Muốn biết chốt có thật sự chặn được không?** Làm trên một dự án thử, không làm trên dự án thật, vì lỡ chốt không chạy thì khoá giả sẽ lên GitHub.
+
+1. Tạo một repo thử trên GitHub (đặt **Private**) và một thư mục git thử trên máy, rồi cài chốt vào đó.
+2. Tạo khoá giả. Dán nguyên khoá vào lệnh có thể bị che mất, nên hãy ghép từ mảnh:
+```bash
+$k = "AK" + "IA" + "Q3EGRJK7" + "XZP2MWNB"
+[IO.File]::WriteAllText("$PWD\khoa.env", "AWS_KEY=$k`n")
+git add khoa.env
+git commit -m "thu chot"
+git push
+```
+3. Push phải bị chặn, kèm tên file `khoa.env` và số dòng. Nếu không bị chặn, xem dòng **KHÔNG ĐƯỢC KIỂM TRA**.
+4. Nhớ gỡ commit đó và đừng dùng repo thử cho việc khác nữa, vì khoá giả đã nằm trong lịch sử của nó.
 
 **Khi bạn muốn đẩy code dù có lỗi** (ví dụ lỗi này bạn đã biết và chấp nhận), có hai cách:
 
@@ -260,6 +287,10 @@ Không. Tìm thấy lỗi không chặn bạn gộp code (merge) và không làm
 | Lần đầu quét rất lâu | Bình thường. Docker đang tải các công cụ quét về. Những lần sau nhanh hơn |
 | Hộp chọn thư mục không thấy đâu | Nó có thể nằm sau cửa sổ khác. Bấm vào thanh tác vụ để tìm |
 | Cách 2: push không bị chặn dù có lỗi | Xem dòng cảnh báo **KHÔNG ĐƯỢC KIỂM TRA**. Có thể Docker không chạy được. Hoặc bạn đã dùng `--no-verify` |
+| Lần đầu push lên GitHub, Git hỏi tên và mật khẩu | GitHub không nhận mật khẩu đăng nhập khi push. Hãy tạo một **Personal Access Token** ở https://github.com/settings/tokens (loại classic, tick quyền `repo`) rồi dán nó vào ô mật khẩu. Tự giữ token, đừng gửi cho ai. Muốn Git nhớ đăng nhập, chạy một lần `git config --global credential.helper manager` |
+| Git báo "could not read Username" | Git không hỏi được vì lệnh đang chạy trong chỗ che mất ô nhập (ví dụ bọc trong `Measure-Command`). Chạy `git push` thường để đăng nhập một lần, rồi mới đo thời gian |
+| Gõ `.venv\Script\python` báo "module .venv could not be loaded" | Thiếu chữ **s**. Đúng là `.venv\Scripts\python` |
+| Cửa sổ đen của file `.cmd` in ra hàng loạt dòng "is not recognized as an internal or external command" | File `.cmd` bị lưu sai kiểu xuống dòng (phải là kiểu Windows, CRLF). Tải lại công cụ bằng **Download ZIP** từ GitHub, đừng sao chép chữ ra file khác |
 | Cách 2: sau khi di chuyển thư mục công cụ thì push báo lỗi | Hook nhớ đường dẫn cũ. Nhấp đúp `Cai-hook.cmd` ở vị trí mới, chọn lại dự án và cài lại |
 | Cách 3: không có email | Kiểm tra 3 mục `SMTP_USERNAME`, `SMTP_PASSWORD`, `REPORT_EMAIL_TO` đã tạo đúng tên chưa. Thiếu một mục là không có email, dù quét vẫn chạy bình thường |
 | Cách 3: email báo "Lỗi" ở một phần | Phần đó chưa kiểm tra được. Mở lần chạy ở tab **Actions** để xem nguyên nhân |
@@ -306,6 +337,16 @@ python -m venv .venv
 ```
 
 Trên Windows dùng `.venv\Scripts\...` thay cho `.venv/bin/...`.
+
+Có 3 test cần Docker thật (nạp 3 dự án mẫu vào hộp cách ly). Chúng mặc định bị loại ra để bộ test chạy nhanh. Chạy riêng bằng:
+
+```bash
+.venv\Scripts\python -m pytest -m docker -q
+```
+
+Sau khi chạy, hai lệnh này phải in ra trống: `docker volume ls --filter name=scanvet-` và `docker ps -a --filter label=scanvet=1`.
+
+Mọi file `.cmd` phải dùng kiểu xuống dòng CRLF của Windows. Test `tests/test_scripts.py` kiểm tra điều này cho cả repo, vì file `.cmd` dùng LF làm `cmd.exe` đọc sai dòng.
 
 Quét thử một dự án ngay trên máy (cần Docker):
 

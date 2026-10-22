@@ -11,7 +11,10 @@ Nhật ký quyết định: `.superpowers/sdd/*/progress.md` (không commit).
   - **A. Chốt kiểm tra trước khi push** (`Cai-hook.cmd`, `python -m scanner hook|prepush`): chặn secret và P1, cho bỏ qua, Docker không chạy thì cho push kèm cảnh báo, nối chuỗi với hook sẵn có.
   - **B. Kiểm tra repo lạ** (`Kiem-tra-repo-la.cmd`, `python -m scanner vet --source TEXT | --source-file PATH`, `scanner/vet/`): sandbox Docker, 3 mức `Không nên mở` / `Đáng ngờ` / `An toàn hơn`.
   - README đã có Cách 4. Spec: `docs/superpowers/specs/2026-10-21-pre-push-and-vet-repo-design.md`.
-- `pytest`: 544 passed, 1 skipped, 3 deselected (test Docker). Test đầu-cuối có Docker thật: `tests/test_vet_e2e.py`, chưa ai chạy.
+- `pytest`: 562 passed, 1 skipped, 3 deselected (test Docker). Test đầu-cuối có Docker thật `tests/test_vet_e2e.py`: **đã chạy thật 22/10/2026, 3 passed** (`-m docker`), không còn volume/container `scanvet-*` sau khi chạy.
+- Lỗi tìm thấy nhờ chạy thật và đã sửa: (1) volume tmpfs bị xoá khi không còn container dùng → thêm container giữ volume (`41c060c`); (2) `Cai-hook.cmd` dùng LF trần làm cmd.exe đọc sai dòng → CRLF + test bao mọi file `.cmd` (`871fc6b`).
+- Đã tự thử tay (22/10): `Quet-du-an.cmd` trên thư mục không có git + khoá giả chưa commit → điểm F; `Cai-hook.cmd` cài được; `git push --no-verify` và `SCAN_SKIP=1` bỏ qua được.
+- Chưa thử: hook **chặn** thật khi push, push khi tắt Docker, `Kiem-tra-repo-la.cmd` với link GitHub thật (đường `git clone` thật trong sandbox chưa ai chạy; e2e dùng đường nạp mẫu), đo thời gian hook.
 
 ## Việc người dùng cần làm tay (cần Docker Desktop và giao diện)
 
@@ -35,8 +38,8 @@ Sau khi đạt: merge `feat/prepush-and-vet` vào `main`, push, nâng tag `v1` n
 - Hook: khi `rules.yaml` hỏng thì chỉ chặn secret/CRITICAL (bỏ lỡ HIGH→P1, có cảnh báo); dòng kết luận hơi nói quá trong trường hợp đó.
 - Hộp chọn thư mục có thể nằm sau cửa sổ console; dấu `.deps-ok` không tự mất hiệu lực khi `requirements` đổi; `webbrowser.open` trả về False thì im lặng.
 - Phân tích repo lạ: dòng dài bị cắt ở `MAX_LINE` (có thể bị lách bằng cách độn chữ, `setup.py`/workflow); `eval` và `atob` ở xa nhau trong nhiều cửa sổ không được nối; `setup.py` chỉ dùng subprocess có thể báo nhầm mức medium; hết giờ quét cây thì tra OSV/gói chưa được ghi riêng.
-- Sandbox: `valid_packages` âm thầm bỏ mục hỏng (có thể ra `An toàn hơn` mà không có cảnh báo); kết quả OSV quá 20 nghìn ký tự bị cắt (có ghi `tool_error`); `docker build` chạy lại mỗi lần; chưa ghim digest cho image; tham số `now` chưa dùng.
-- Kiểu dáng: thiếu dòng trống PEP8 ở vài file; BOM đầu `tests/test_vet_verdict.py`; tên file tạm của `.cmd` dùng `%RANDOM%`.
+- Sandbox: kết quả OSV quá 20 nghìn ký tự bị cắt (có ghi `tool_error`); `docker build` chạy lại mỗi lần; chưa ghim digest cho image (kể cả `alpine/git`); tham số `now` chưa dùng; lockfile ngoài npm (pip, yarn) chưa được tra OSV nên có thể ra `An toàn hơn` nếu bộ phát hiện tĩnh không thấy gì; nếu máy tắt đột ngột, container giữ volume sống tối đa 30 phút (`docker ps -a --filter label=scanvet=1`).
+- Kiểu dáng: thiếu dòng trống PEP8 ở vài file; tên file tạm của `.cmd` dùng `%RANDOM%`. (Đã xử lý: `valid_packages` giờ ghi lỗi khi bỏ mục hỏng; BOM đã bỏ khỏi `.py`/`.cmd`.)
 - Từ trước: tải DB của Trivy chỉ một nguồn (#15); khoá so sánh không có số dòng (#13, cố ý); đếm `nosemgrep` ra 11 do chuỗi mẫu trong test; chỉ đọc `Dockerfile` ở thư mục gốc.
 
 ## Giai đoạn 2 (chưa làm): quét nhiều repo cũ
