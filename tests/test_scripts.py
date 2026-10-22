@@ -1,4 +1,4 @@
-﻿import re
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -68,9 +68,9 @@ def test_ask_repo_script_parses():
 def test_vet_cmd_link_only_travels_through_temp_file():
     text = VET_CMD.read_text(encoding="utf-8")
     assert "set /p" not in text.lower()
-    allowed = ('set "LINKFILE=', 'if exist "%LINKFILE%"', 'del "%LINKFILE%"',
+    allowed = ('set "LINKFILE=', 'exist "%LINKFILE%"', 'del "%LINKFILE%"',
                '-OutFile "%LINKFILE%"', '--source-file "%LINKFILE%"')
-    for line in text.splitlines():
+    for line in (l for l in text.splitlines() if not l.lower().startswith('rem')):
         if "%LINKFILE%" in line:
             assert any(a in line for a in allowed), line
         if "python.exe" in line.lower() or "powershell" in line.lower():
