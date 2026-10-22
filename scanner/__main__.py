@@ -102,9 +102,24 @@ def main(argv, executor=default_executor, smtp_factory=smtplib.SMTP_SSL, docker=
     hk = sub.add_parser("hook", help="Cài/gỡ hook pre-push")
     hk.add_argument("action", choices=("install", "uninstall"))
     hk.add_argument("--root", required=True)
+    vet = sub.add_parser("vet", help="Kiểm tra repo lạ trước khi tải")
+    vsrc = vet.add_mutually_exclusive_group(required=True)
+    vsrc.add_argument("--source", help="Link repo hoặc owner/repo")
+    vsrc.add_argument("--source-file", help="File văn bản chứa link repo (dùng cho file nhấp đúp)")
     send = sub.add_parser("send", help="Gửi email báo cáo")
     send.add_argument("--out", required=True)
     args = parser.parse_args(argv)
+    if args.cmd == "vet":
+        from .vet.command import read_source_file, vet_command
+        if args.source_file is not None:
+            try:
+                text = read_source_file(Path(args.source_file))
+            except OSError as exc:
+                print(f"Không đọc được link repo: {exc}")
+                return 2
+        else:
+            text = args.source
+        return vet_command(text, executor, docker or DockerDesktop())
     if args.cmd == "run":
         return _run(args, executor, docker or DockerDesktop())
     if args.cmd == "check":
