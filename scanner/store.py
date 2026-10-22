@@ -26,6 +26,17 @@ def slug_for(path: Path) -> str:
     return f"{name[:40].strip('-') or 'project'}-{digest}"
 
 
+def slug_for_text(text: str) -> str:
+    """Slug từ một chuỗi (vd. "github.com/owner/repo@main"), không phải đường dẫn trên máy."""
+    text = str(text)
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:8]
+    name = re.split(r"[/\\]", text.rstrip("/\\"))[-1].replace("đ", "d").replace("Đ", "d")
+    name = unicodedata.normalize("NFKD", name)
+    name = "".join(c for c in name if not unicodedata.combining(c)).lower()
+    name = re.sub(r"[^a-z0-9]+", "-", name).strip("-") or "repo"
+    return f"{name[:40].strip('-') or 'repo'}-{digest}"
+
+
 def store_root() -> Path:
     override = os.environ.get("SCAN_STORE")
     if override:

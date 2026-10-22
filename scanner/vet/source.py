@@ -69,8 +69,9 @@ def _check_host(host: str) -> None:
         raise _bad("Không chấp nhận địa chỉ IP làm máy chủ.")
 
 
-def _check_resolution(host: str, resolver: Callable[[str], list[str]]) -> None:
+def _check_resolution(host: str, resolver: Callable[[str], list[str]]) -> list[str]:
     # Advisory only (xem docstring): git clone sẽ phân giải lại.
+    ok: list[str] = []
     try:
         addrs = list(resolver(host))
     except Exception:
@@ -89,6 +90,15 @@ def _check_resolution(host: str, resolver: Callable[[str], list[str]]) -> None:
                 raise _bad(f"Máy chủ {host} trỏ về địa chỉ IPv6 không được phép.")
         if not ip.is_global or ip.is_multicast:
             raise _bad(f"Máy chủ {host} trỏ về địa chỉ nội bộ, không được phép.")
+        ok.append(str(ip))
+    return ok
+
+
+def resolve_public(host: str, resolver: Callable[[str], list[str]] | None = None) -> list[str]:
+    """Phân giải `host` và trả về các địa chỉ đã kiểm tra là công khai (đóng khi lỗi:
+    mọi lỗi/địa chỉ nội bộ -> InvalidSource). Dùng để GHIM IP cho bước tải (chống DNS rebinding)."""
+    _check_host(host)
+    return _check_resolution(host, resolver or _default_resolver)
 
 
 def parse_source(text: str, resolver: Callable[[str], list[str]] | None = None) -> Source:
