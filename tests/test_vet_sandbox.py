@@ -493,3 +493,64 @@ def test_osv_payload_capped_for_argv_and_recorded_as_tool_error():
     payload = json.loads(w[-1])
     assert payload["error"] and payload["malicious"]
     assert out.verdict != Verdict.SAFER and any("OSV" in e for e in out.tool_errors)
+
+
+# ------------------------------------------------------------------ fix round 2
+
+def _many(n, level, extra=None):
+    sigs = [{"id": f"s{i}", "level": level, "file": "a", "line": 1, "why": "w"} for i in range(n)]
+    return json.dumps({"signals": sigs + (extra or []), "incomplete": []})
+
+
+def _note(n):
+    return f"Đã cắt bớt {n} tín hiệu (giữ {sb._MAX_SIGNALS} tín hiệu mức cao nhất)"
+
+
+def test_truncation_keeps_high_signal_at_end_and_notes_it():
+    high = {"id": "H", "level": "high", "file": "a", "line": 1, "why": "w"}
+    out = run(FakeExec(outputs={"read": _many(2500, "info", [high])}))
+    assert out.verdict == Verdict.NOT_SAFE
+    assert any(s.id == "H" for s in out.result.signals) and len(out.result.signals) == 2000
+    assert _note(501) in out.result.incomplete
+
+
+def test_truncation_of_low_signals_never_safer():
+    out = run(FakeExec(outputs={"read": _many(2500, "low")}))
+    assert out.verdict != Verdict.SAFER
+    assert _note(500) in out.result.incomplete
+
+
+def test_exactly_max_signals_has_no_note():
+    r = sb.parse_result(_many(2000, "info"))
+    assert len(r.signals) == 2000 and r.incomplete == []
+
+
+def test_truncation_sort_is_stable_by_level_rank():
+    sigs = [{"id": f"i{k}", "level": "info", "file": "a", "line": 1, "why": "w"} for k in range(1000)]
+    sigs += [{"id": f"m{k}", "level": "medium", "file": "a", "line": 1, "why": "w"} for k in range(1500)]
+    r = sb.parse_result(json.dumps({"signals": sigs, "incomplete": []}))
+    assert [s.id for s in r.signals[:1500]] == [f"m{k}" for k in range(1500)]
+    assert r.signals[1500].id == "i0" and len(r.signals) == 2000
+
+
+@pytest.mark.parametrize("bad", ['{"signals":[{"id":"\\ud800","level":"high","file":"a","line":1,"why":"w"}],"incomplete":[]}',
+                                 '{"signals":[{"id":"x","level":"high","file":"\\udfff","line":1,"why":"w"}],"incomplete":[]}',
+                                 '{"signals":[{"id":"x","level":"high","file":"a","line":1,"why":"\\udc00"}],"incomplete":[]}',
+                                 '{"signals":[],"incomplete":["\\ud800"]}'])
+def test_lone_surrogates_rejected(bad):
+    assert sb.parse_result(bad) is None
+    out = run(FakeExec(outputs={"read": bad}))
+    assert out.verdict == Verdict.SUSPICIOUS and out.tool_errors
+
+
+def test_keyboard_interrupt_during_fetch_removes_containers_before_volumes():
+    ex = FakeExec(raises={"fetch": KeyboardInterrupt()})
+    with pytest.raises(KeyboardInterrupt):
+        run(ex)
+    cmds = [c for c, _ in ex.cmds]
+    fetch_name = _val(ex.find("fetch")[0], "--name")
+    rm_idx = [i for i, c in enumerate(cmds) if c[:3] == ["docker", "rm", "-f"]]
+    vol_idx = [i for i, c in enumerate(cmds) if c[:3] == ["docker", "volume", "rm"]]
+    assert rm_idx and vol_idx and max(rm_idx) < min(vol_idx)
+    assert fetch_name in cmds[rm_idx[0]]
+    assert "analyze" not in ex.steps()

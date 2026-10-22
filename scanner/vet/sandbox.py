@@ -43,6 +43,7 @@ MAX_RESULT_BYTES = 5_000_000
 MAX_OSV_ARG = 20_000  # argv Windows tối đa ~32K ký tự; chừa chỗ cho phần còn lại của lệnh
 _LEVELS = frozenset({"high", "medium", "low", "info"})
 _MAX_SIGNALS = 2000
+_LEVEL_RANK = {"high": 0, "medium": 1, "low": 2, "info": 3}
 _VOLUME = re.compile(r"scanvet-[0-9a-f]{8,32}(-out)?")
 _PKG_DIR = Path(__file__).resolve().parent
 
@@ -214,8 +215,16 @@ def _read_text(path: Path) -> str:
         return ""
 
 
+def _encodable(v: str) -> bool:
+    try:
+        v.encode("utf-8")  # lone surrogate (U+D800-U+DFFF) -> UnicodeEncodeError
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 def _str_field(v, limit: int) -> Optional[str]:
-    return v if isinstance(v, str) and len(v) <= limit else None
+    return v if isinstance(v, str) and len(v) <= limit and _encodable(v) else None
 
 
 def parse_result(text: str) -> Optional[ScanResult]:
@@ -230,8 +239,6 @@ def parse_result(text: str) -> Optional[ScanResult]:
     if not isinstance(data, dict) or not isinstance(data.get("signals"), list) \
             or not isinstance(data.get("incomplete"), list):
         return None
-    if len(data["signals"]) > _MAX_SIGNALS:
-        return None
     sigs = []
     for s in data["signals"]:
         if not isinstance(s, dict):
@@ -245,9 +252,14 @@ def parse_result(text: str) -> Optional[ScanResult]:
             return None
         sigs.append(Signal(clean(sid, 80), level, clean(file, 300), line, clean(why, 300)))
     inc = data["incomplete"][:200]
-    if not all(isinstance(i, str) for i in inc):
+    if not all(isinstance(i, str) and _encodable(i) for i in inc):
         return None
-    return ScanResult(sigs, [clean(i, 300) for i in inc])
+    incomplete = [clean(i, 300) for i in inc]
+    if len(sigs) > _MAX_SIGNALS:
+        dropped = len(sigs) - _MAX_SIGNALS
+        sigs = sorted(sigs, key=lambda x: _LEVEL_RANK[x.level])[:_MAX_SIGNALS]  # sort ổn định
+        incomplete.append(f"Đã cắt bớt {dropped} tín hiệu (giữ {_MAX_SIGNALS} tín hiệu mức cao nhất)")
+    return ScanResult(sigs, incomplete)
 
 def _parse_kb(text: str) -> Optional[int]:
     m = re.match(r"\s*(\d+)", text or "")
