@@ -1,4 +1,4 @@
-﻿"""Cài/gỡ hook pre-push của bộ quét mà không ghi đè hook sẵn có."""
+"""Cài/gỡ hook pre-push của bộ quét mà không ghi đè hook sẵn có."""
 
 from __future__ import annotations
 
