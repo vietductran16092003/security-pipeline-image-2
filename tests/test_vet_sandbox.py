@@ -42,13 +42,19 @@ class FakeExec:
 
     def __init__(self, codes=None, outputs=None, raises=None):
         self.cmds, self.codes, self.raises = [], codes or {}, raises or {}
-        self.outputs = {"size": "1000\t/work/repo\n", "packages": "[]", "read": json.dumps(VET_CLEAN)}
+        self.outputs = {"size": "1000\t/work/repo\n", "packages": "[]", "read": json.dumps(VET_CLEAN),
+                        "inspect": "true\n"}
         self.outputs.update(outputs or {})
 
     def __call__(self, cmd, stdout_path, timeout):
         assert isinstance(cmd, list) and all(isinstance(a, str) for a in cmd)
         self.cmds.append((cmd, timeout))
         s = step(cmd)
+        if s == "ps" and stdout_path is not None and "ps" not in self.outputs:
+            # container còn tồn tại = mọi container đã `docker run` (giả lập: không tự xoá)
+            stdout_path.write_text("\n".join(c[c.index("--name") + 1] for c, _ in self.cmds
+                                             if c[:2] == ["docker", "run"]), encoding="utf-8")
+            return 0
         if s in self.raises:
             raise self.raises[s]
         if stdout_path is not None and s in self.outputs:
@@ -427,6 +433,7 @@ def _all_run_cmds():
 
 
 EXPECTED = {  # step -> (memory, pids, has_network, extra volume specs)
+    "hold": ("64m", "16", False, ["{v}:/work", "{o}:/out"]),
     "fetch": ("1g", "256", True, ["{v}:/work"]),
     "size": ("256m", "64", False, ["{v}:/work:ro"]),
     "packages": ("512m", "64", False, ["{v}:/work:ro"]),
@@ -596,3 +603,112 @@ def test_hostile_osv_response_never_raises(resp):
     assert r["malicious"] == [] 
     out = run(FakeExec(outputs={"packages": json.dumps([["npm", "a", "1.0.0"]])}), http=lambda u, b: resp)
     assert out.verdict is not None
+
+
+# ------------------------------------------------------------------ real-Docker fix: holder + quiet cleanup
+
+def _idx(ex, pred):
+    return [i for i, (c, _) in enumerate(ex.cmds) if pred(c)]
+
+
+def test_holder_started_after_volumes_and_before_fetch_and_verified():
+    ex = FakeExec()
+    run(ex)
+    cmds = [c for c, _ in ex.cmds]
+    creates = _idx(ex, lambda c: c[:3] == ["docker", "volume", "create"])
+    hold = _idx(ex, lambda c: c[:2] == ["docker", "run"] and step(c) == "hold")
+    insp = _idx(ex, lambda c: c[:2] == ["docker", "inspect"])
+    fetch = _idx(ex, lambda c: c[:2] == ["docker", "run"] and step(c) == "fetch")
+    assert len(hold) == 1 and max(creates) < hold[0] < insp[0] < fetch[0]
+    h = cmds[hold[0]]
+    assert "-d" in h[:4] and h[h.index("--entrypoint") + 1] == "sleep" and h[-1] == str(sb.HOLD_SECONDS)
+    name = _val(h, "--name")
+    assert cmds[insp[0]] == ["docker", "inspect", "-f", "{{.State.Running}}", name]
+
+
+def test_holder_started_before_fetch_seam():
+    ex = FakeExec()
+    seen = []
+    run(ex, fetch=lambda executor, volume: seen.append(list(ex.steps())) or 0)
+    assert "hold" in seen[0] and "inspect" in seen[0] and "fetch" not in seen[0]
+
+
+def test_every_shared_volume_is_mounted_by_holder():
+    # Volume tmpfs bị umount và MẤT dữ liệu khi không còn container nào dùng nó, nên mọi volume
+    # được >= 2 bước dùng phải luôn được container "hold" giữ.
+    ex, runs = _all_run_cmds()
+    users = {}
+    for c in runs:
+        for i, a in enumerate(c):
+            if a == "-v":
+                users.setdefault(c[i + 1].split(":")[0], []).append(step(c))
+    assert users
+    for vol, steps_ in users.items():
+        if len([x for x in steps_ if x != "hold"]) >= 2:
+            assert "hold" in steps_, (vol, steps_)
+    assert set(users) == {c[-1] for c, _ in ex.cmds if c[:3] == ["docker", "volume", "create"]}
+
+
+def test_holder_not_running_is_fetch_failure_and_volumes_removed():
+    ex = FakeExec(outputs={"inspect": "false\n"})
+    out = run(ex)
+    assert out.verdict is None and out.fetch_error and "fetch" not in ex.steps()
+    cmds = [c for c, _ in ex.cmds]
+    assert cmds[-1][:4] == ["docker", "volume", "rm", "-f"]
+
+
+def test_holder_run_failure_is_fetch_failure():
+    ex = FakeExec(codes={"hold": 125})
+    out = run(ex)
+    assert out.verdict is None and out.fetch_error
+    assert "inspect" not in ex.steps() and "fetch" not in ex.steps()
+    assert [c for c, _ in ex.cmds][-1][:3] == ["docker", "volume", "rm"]
+
+
+def test_holder_removed_before_volumes_on_interrupt_and_normal():
+    for raises in ({"analyze": KeyboardInterrupt()}, {}):
+        ex = FakeExec(raises=raises)
+        try:
+            run(ex)
+        except KeyboardInterrupt:
+            pass
+        hold_name = _val(ex.find("hold")[0], "--name")
+        cmds = [c for c, _ in ex.cmds]
+        rm = [i for i, c in enumerate(cmds) if c[:3] == ["docker", "rm", "-f"] and hold_name in c]
+        vol = [i for i, c in enumerate(cmds) if c[:3] == ["docker", "volume", "rm"]]
+        assert rm and vol and rm[0] < vol[0]
+
+
+def test_cleanup_lists_present_containers_and_skips_absent():
+    ex = FakeExec(outputs={"ps": ""})  # mọi container đã tự xoá (--rm)
+    run(ex)
+    ps = [c for c, _ in ex.cmds if c[:2] == ["docker", "ps"]]
+    assert ps and ps[0][:7] == ["docker", "ps", "-a", "--filter", "label=scanvet=1", "--format", "{{.Names}}"]
+    assert not [c for c, _ in ex.cmds if c[:3] == ["docker", "rm", "-f"]]  # không rm container vắng mặt
+
+
+def test_cleanup_removes_only_listed_present_names():
+    holder = {}
+
+    class Ex(FakeExec):
+        def __call__(self, cmd, stdout_path, timeout):
+            if cmd[:2] == ["docker", "ps"]:
+                self.cmds.append((cmd, timeout))
+                stdout_path.write_text(holder["name"] + "\nscanvet-other-container\nrandom\n", encoding="utf-8")
+                return 0
+            r = super().__call__(cmd, stdout_path, timeout)
+            if step(cmd) == "hold":
+                holder["name"] = _val(cmd, "--name")
+            return r
+    ex = Ex()
+    run(ex)
+    rm = [c for c, _ in ex.cmds if c[:3] == ["docker", "rm", "-f"]]
+    assert rm == [["docker", "rm", "-f", holder["name"]]]  # chỉ tên của lần chạy này và còn tồn tại
+
+
+def test_analyzer_failure_surfaces_incomplete_detail_in_tool_errors():
+    vet = {"signals": [], "incomplete": ["Không tìm thấy thư mục repo\x1b[2J để phân tích"]}
+    out = run(FakeExec(codes={"analyze": 2}, outputs={"read": json.dumps(vet)}))
+    assert out.verdict == Verdict.SUSPICIOUS
+    joined = " ".join(out.tool_errors)
+    assert "thoát mã 2" in joined and "Không tìm thấy thư mục repo" in joined and "\x1b" not in joined

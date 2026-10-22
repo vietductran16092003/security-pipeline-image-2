@@ -38,6 +38,7 @@ FETCH_TIMEOUT = 300
 ANALYZE_TIMEOUT = 300
 ANALYZE_DEADLINE = 270  # bộ phân tích tự dừng sớm hơn lệnh kill để còn ghi vet.json
 STEP_TIMEOUT = 120
+HOLD_SECONDS = 1800  # container giữ volume sống tối đa 30 phút (luôn bị `rm -f` ở finally)
 OUT_BYTES = 32_000_000
 MAX_RESULT_BYTES = 5_000_000
 MAX_OSV_ARG = 20_000  # argv Windows tối đa ~32K ký tự; chừa chỗ cho phần còn lại của lệnh
@@ -146,6 +147,25 @@ def build_fetch_command(src: S.Source, volume: str, max_bytes: int = MAX_BYTES, 
     if src.branch:
         cmd += ["--branch", src.branch]
     return cmd + ["--", src.clone_url, "/work/repo"]
+
+
+def build_hold_command(volume: str, out_volume: str, name: Optional[str] = None) -> list[str]:
+    """Container nền giữ CẢ HAI volume được mount suốt phiên.
+
+    Volume tmpfs của driver `local` bị umount và MẤT dữ liệu ngay khi không còn container nào dùng nó
+    (kiểm chứng trên Docker 29.6.2), nên cần một container luôn chạy để các bước sau còn thấy dữ liệu.
+    Cùng mức cô lập như các container khác: không mạng, cap-drop ALL, rootfs chỉ đọc, user 10001.
+    """
+    _check_volume(volume)
+    _check_volume(out_volume)
+    cmd = _base("hold", name or _name("hold"), memory="64m", pids="16")
+    cmd.insert(2, "-d")
+    return cmd + ["-v", f"{volume}:/work", "-v", f"{out_volume}:/out", "--entrypoint", "sleep",
+                  GIT_IMAGE, str(HOLD_SECONDS)]
+
+
+def build_inspect_running_command(name: str) -> list[str]:
+    return ["docker", "inspect", "-f", "{{.State.Running}}", name]
 
 
 def build_size_command(volume: str, name: Optional[str] = None) -> list[str]:
@@ -272,18 +292,31 @@ def _fail(src, msg, truncated=False) -> VetOutcome:
     return VetOutcome(None, None, msg, truncated, [], src)
 
 
-def _cleanup(executor, names: list[str], created: list[str]) -> None:
-    """Kill container trước, rồi xoá volume (thử lại 1 lần). Lỗi dọn dẹp không che ngoại lệ gốc."""
-    def attempt(cmd: list[str]) -> int:
+def _cleanup(executor, names: list[str], created: list[str], tdir: Optional[Path] = None) -> None:
+    """Kill container (chỉ những cái còn tồn tại) trước, rồi xoá volume (thử lại 1 lần).
+    Lỗi dọn dẹp không che ngoại lệ gốc. Container `--rm` đã thoát không bị `rm -f` (tránh ồn)."""
+    def attempt(cmd: list[str], out: Optional[Path] = None) -> int:
         try:
-            return executor(cmd, None, STEP_TIMEOUT)
+            return executor(cmd, out, STEP_TIMEOUT)
         except Exception:  # noqa: BLE001 - dọn dẹp là best-effort
             return 1
-    if names:
-        attempt(["docker", "rm", "-f", *names])
+
+    def remove_containers() -> None:
+        if not names:
+            return
+        present = list(names)  # không liệt kê được -> thử xoá hết (vẫn đúng, chỉ ồn hơn)
+        if tdir is not None:
+            listing = tdir / "ps.txt"
+            if attempt(["docker", "ps", "-a", "--filter", "label=scanvet=1", "--format", "{{.Names}}"],
+                       listing) == 0:
+                alive = {ln.strip() for ln in _read_text(listing).splitlines()}
+                present = [n for n in names if n in alive]
+        if present:
+            attempt(["docker", "rm", "-f", *present])
+
+    remove_containers()
     if created and attempt(["docker", "volume", "rm", "-f", *created]) != 0:
-        if names:
-            attempt(["docker", "rm", "-f", *names])
+        remove_containers()
         attempt(["docker", "volume", "rm", "-f", *created])
 
 
@@ -321,6 +354,15 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
             if executor(build_volume_create(v, size), None, STEP_TIMEOUT) != 0:
                 return _fail(src, "Không tạo được volume Docker cho repo.")
             created.append(v)
+
+        # Giữ volume sống (tmpfs mất dữ liệu khi không có container nào mount) suốt phiên.
+        hold = nm("hold")
+        started = executor(build_hold_command(vol, out_vol, hold), None, STEP_TIMEOUT) == 0
+        if started:
+            executor(build_inspect_running_command(hold), tdir / "hold.txt", STEP_TIMEOUT)
+            started = _read_text(tdir / "hold.txt").strip().lower() == "true"
+        if not started:
+            return _fail(src, "Không khởi động được container giữ dữ liệu repo (docker run lỗi); không kiểm tra.")
 
         if fetch is not None:
             code = fetch(executor, vol)
@@ -380,12 +422,15 @@ def vet_repo(src: S.Source, executor, docker, now=None, fetch: Optional[Fetch] =
             result = ScanResult([], ["Không đọc được kết quả phân tích (vet.json thiếu hoặc hỏng)"])
             if not tool_errors:
                 tool_errors.append("Kết quả phân tích thiếu hoặc hỏng")
+        if acode not in (0, 124, 137) and result.incomplete and tool_errors:
+            # Thoát mã lạ: nêu lý do bộ phân tích tự ghi vào vet.json (đã làm sạch) để chẩn đoán được.
+            tool_errors[-1] += " - " + clean("; ".join(result.incomplete[:2]), 200)
         if truncated:
             result.incomplete.append(f"Repo vượt giới hạn {max_bytes // 1_000_000} MB, kết quả có thể thiếu")
         verdict = decide(result, None, truncated, tool_errors)
         return VetOutcome(verdict, result, None, truncated, tool_errors, src)
     finally:
         try:
-            _cleanup(executor, names, created)
+            _cleanup(executor, names, created, tdir)
         finally:
             tmp.cleanup()
