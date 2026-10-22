@@ -39,6 +39,23 @@ def test_cmd_files_use_crlf_and_utf8_codepage():
     assert b"\xef\xbb\xbf" == (ROOT / "scripts" / "pick-folder.ps1").read_bytes()[:3]
 
 
+def _all_cmd_files():
+    skip = {".git", ".venv", ".superpowers", "scan-out", "node_modules"}
+    return [p for p in ROOT.rglob("*.cmd") if not skip & set(p.relative_to(ROOT).parts)]
+
+
+def test_every_cmd_file_has_only_crlf_line_endings():
+    # cmd.exe đọc file .bat/.cmd dùng LF trần sai (cắt dòng, nhảy nhãn lung tung): mọi .cmd phải là CRLF.
+    files = _all_cmd_files()
+    assert len(files) >= 4, files
+    for p in files:
+        raw = p.read_bytes()
+        assert b"\r\n" in raw, p
+        assert b"\n" not in raw.replace(b"\r\n", b""), f"{p.name} có dòng kết thúc bằng LF trần"
+        assert b"\xef\xbb\xbf" != raw[:3], f"{p.name} có BOM"
+        assert b"chcp 65001" in raw, p
+
+
 ASK = ROOT / "scripts" / "ask-repo.ps1"
 VET_CMD = ROOT / "Kiem-tra-repo-la.cmd"
 
